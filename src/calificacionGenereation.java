@@ -8,7 +8,7 @@ public class calificacionGenereation {
 
 	public static void main(String[] args) {
 		// TODO Auto-generated method stub
-		
+		int a;
 		Scanner sc = new Scanner(System.in);
 		String sName;
 		byte bScoreMc=0,bScorePer=0,bScoreRp=0,bScoreOf=0,bScoreCom=0,bScoreTe=0,bScoreGt=0,bScoreOd=0;
