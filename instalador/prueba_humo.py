@@ -13,6 +13,7 @@ import subprocess
 import sys
 import time
 import urllib.error
+from concurrent.futures import ThreadPoolExecutor
 import urllib.request
 
 RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -28,16 +29,18 @@ def falla(msg):
     raise SystemExit(1)
 
 
+def _vivo(p):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=1.5) as r:
+            return json.load(r).get("app") == "punto-de-venta"
+    except (OSError, ValueError):
+        return False
+
+
 def puertos_activos():
-    vivos = []
-    for p in PUERTOS:
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=0.7) as r:
-                if json.load(r).get("app") == "punto-de-venta":
-                    vivos.append(p)
-        except (OSError, ValueError):
-            pass
-    return vivos
+    puertos = list(PUERTOS)
+    with ThreadPoolExecutor(max_workers=len(puertos)) as pool:   # en paralelo: Windows tarda en rechazar puertos cerrados
+        return [p for p, vivo in zip(puertos, pool.map(_vivo, puertos)) if vivo]
 
 
 class Cliente:
@@ -69,7 +72,7 @@ def main():
     ap.add_argument("--llaves", help="carpeta con privada.pem (permite probar activacion, venta y cierre)")
     ap.add_argument("--sin-ventana", action="store_true")
     a = ap.parse_args()
-    env = {**os.environ, "POS_NO_BROWSER": "1"}
+    env = {**os.environ, "POS_NO_BROWSER": "1", "POS_SIN_DIALOGOS": "1"}
     args = [a.exe] + (["--sin-ventana"] if a.sin_ventana else [])
     print(f"Probando {a.exe} {'(sin ventana)' if a.sin_ventana else '(con ventana)'}")
     if puertos_activos():

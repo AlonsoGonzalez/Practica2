@@ -15,6 +15,9 @@ on:
 jobs:
   windows:
     runs-on: windows-latest
+    timeout-minutes: 45
+    env:
+      POS_SIN_DIALOGOS: "1"   # que ningun aviso espere un clic en el servidor de pruebas
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -24,7 +27,8 @@ jobs:
 
       - name: Pruebas automaticas en Windows (informativo)
         continue-on-error: true
-        run: python -m pytest -q -p no:cacheprovider
+        timeout-minutes: 15
+        run: python -m pytest -q -p no:cacheprovider --durations=8
 
       - name: Llave publica
         id: llave
@@ -45,6 +49,7 @@ jobs:
         run: pyinstaller --noconfirm instalador/pos.spec
 
       - name: Prueba de humo del programa suelto (con ventana)
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe")
@@ -53,6 +58,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
 
       - name: Prueba de humo del programa suelto (sin ventana)
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe", "--sin-ventana")
@@ -70,6 +76,7 @@ jobs:
           ls -la salida
 
       - name: Instalar en silencio, probar lo instalado y desinstalar
+        timeout-minutes: 10
         shell: pwsh
         run: |
           $setup = (Get-ChildItem salida\PuntoDeVenta-Setup-*.exe | Select-Object -First 1).FullName

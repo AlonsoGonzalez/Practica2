@@ -23,6 +23,7 @@ def puerto_cualquiera():
 
 def escucha(puerto):
     with socket.socket() as s:
+        s.settimeout(1)
         return s.connect_ex(("127.0.0.1", puerto)) == 0
 
 
@@ -122,7 +123,7 @@ def test_programa_completo_como_proceso_aparte(tmp_path):
     """Lo mismo que hace el doble clic: arranca, atiende, un segundo lanzamiento no duplica y se apaga."""
     puerto = puerto_cualquiera()
     env = {**os.environ, "POS_DATA_DIR": str(tmp_path / "d"), "POS_NO_BROWSER": "1", "POS_PORT": str(puerto),
-           "POS_DB": str(tmp_path / "d" / "pos.db"), "PYTHONPATH": RAIZ}
+           "POS_DB": str(tmp_path / "d" / "pos.db"), "PYTHONPATH": RAIZ, "POS_SIN_DIALOGOS": "1"}
     p = subprocess.Popen([sys.executable, "servidor.py", "--sin-ventana"], cwd=RAIZ, env=env,
                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     try:

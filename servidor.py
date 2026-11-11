@@ -19,6 +19,7 @@ import threading
 import traceback
 import urllib.request
 import webbrowser
+from concurrent.futures import ThreadPoolExecutor
 
 from waitress import create_server
 
@@ -31,20 +32,28 @@ PUERTO_INICIAL = 5000
 def puerto_libre(host, inicial):
     for puerto in range(inicial, inicial + 20):
         with socket.socket() as s:
+            s.settimeout(1)  # en Windows conectar a un puerto cerrado puede tardar varios segundos
             if s.connect_ex(("127.0.0.1", puerto)) != 0:  # nadie escucha: esta libre
                 return puerto
     raise RuntimeError("No hay un puerto libre entre %d y %d" % (inicial, inicial + 19))
 
 
+def _es_nuestra_app(puerto):
+    try:
+        with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/ping", timeout=1.5) as r:
+            return json.load(r).get("app") == "punto-de-venta"
+    except (OSError, ValueError, AttributeError):
+        return False
+
+
 def ya_corriendo(inicial=PUERTO_INICIAL):
-    """Puerto de un Punto de Venta que ya esta abierto en esta computadora (o None)."""
-    for puerto in range(inicial, inicial + 20):
-        try:
-            with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/ping", timeout=0.7) as r:
-                if json.load(r).get("app") == "punto-de-venta":
-                    return puerto
-        except (OSError, ValueError, AttributeError):
-            continue
+    """Puerto de un Punto de Venta que ya esta abierto en esta computadora (o None).
+    Revisa los puertos en paralelo: asi tarda ~1 s aunque Windows sea lento con puertos cerrados."""
+    puertos = list(range(inicial, inicial + 20))
+    with ThreadPoolExecutor(max_workers=len(puertos)) as pool:
+        for puerto, es_nuestra in zip(puertos, pool.map(_es_nuestra_app, puertos)):
+            if es_nuestra:
+                return puerto
     return None
 
 
@@ -121,6 +130,9 @@ def configurar_salida():
 
 
 def avisar_error(titulo, mensaje):
+    if os.environ.get("POS_SIN_DIALOGOS") == "1":  # pruebas automaticas: nadie puede dar clic en una ventana
+        print(f"{titulo}: {mensaje}")
+        return
     try:
         import tkinter
         from tkinter import messagebox
