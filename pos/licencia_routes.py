@@ -1,7 +1,10 @@
+from datetime import date
+
 from flask import Blueprint, current_app, jsonify, request
 
 from . import licencia as lic
 from .db import get_db
+from .validar import datos
 
 bp = Blueprint("licencia", __name__)
 
@@ -17,6 +20,23 @@ def instalacion_id():
     return nuevo
 
 
+def fecha_efectiva():
+    """Hoy, pero nunca anterior a la fecha mas reciente que la app ya vio.
+    Asi, regresar el reloj de la computadora no revive una licencia de prueba vencida."""
+    db = get_db()
+    hoy = date.today()
+    row = db.execute("SELECT valor FROM ajustes WHERE clave='fecha_max'").fetchone()
+    try:
+        maxima = date.fromisoformat(row["valor"]) if row else hoy
+    except ValueError:
+        maxima = hoy
+    if hoy > maxima or row is None:
+        db.execute("INSERT OR REPLACE INTO ajustes (clave,valor) VALUES ('fecha_max',?)", (hoy.isoformat(),))
+        db.commit()
+        maxima = max(hoy, maxima)
+    return max(hoy, maxima)
+
+
 def estado_actual():
     row = get_db().execute("SELECT clave FROM licencia WHERE id=1").fetchone()
     return lic.evaluar(
@@ -24,6 +44,7 @@ def estado_actual():
         current_app.config["LICENSE_PUBLIC_KEY"],
         instalacion_id(),
         current_app.config["FECHA_VERSION"],
+        hoy=fecha_efectiva(),
     )
 
 
@@ -47,7 +68,7 @@ def ver_licencia():
 
 @bp.post("/api/licencia")
 def activar_licencia():
-    clave = lic.normalizar((request.get_json(silent=True) or {}).get("clave"))
+    clave = lic.normalizar(datos().get("clave"))
     llave = current_app.config["LICENSE_PUBLIC_KEY"]
     if llave is None:
         return jsonify(error="Modo desarrollo: no hay llave publica configurada"), 400

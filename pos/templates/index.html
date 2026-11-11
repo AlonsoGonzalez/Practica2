@@ -34,6 +34,7 @@
   <nav>
     <button data-tab="venta" class="active">Venta</button>
     <button data-tab="inventario" data-solo-dueno>Inventario</button>
+    <button data-tab="caja">Caja</button>
     <button data-tab="clientes">Fiado</button>
     <button data-tab="pedido" data-solo-dueno>Pedido</button>
     <button data-tab="corte" data-solo-dueno>Corte de caja</button>
@@ -114,6 +115,39 @@
   <p><b>Total estimado:</b> <span id="p-total">$0.00</span></p>
 </section>
 
+<section id="caja" class="tab">
+  <h2>Turno de caja</h2>
+  <div id="turno-cerrado" hidden>
+    <p>No tienes un turno abierto. Cuenta el efectivo con el que inicias y ábrelo para poder cobrar.</p>
+    <form id="form-abrir" class="fila">
+      <input name="fondo" type="number" step="0.01" min="0" placeholder="Fondo inicial $" required>
+      <button class="primario">Abrir turno</button>
+    </form>
+  </div>
+  <div id="turno-abierto" hidden>
+    <div class="kpis" id="turno-kpis"></div>
+    <h3>Retiros e ingresos de efectivo</h3>
+    <form id="form-mov" class="fila">
+      <select name="tipo"><option value="retiro">Retiro</option><option value="ingreso">Ingreso</option></select>
+      <input name="monto" type="number" step="0.01" min="0.01" placeholder="Monto $" required>
+      <input name="motivo" placeholder="Motivo (pago a proveedor, cambio…)" required>
+      <button>Registrar</button>
+    </form>
+    <h3>Cerrar turno</h3>
+    <p>Cuenta el dinero que hay en la caja y escríbelo. El sistema calcula la diferencia.</p>
+    <form id="form-cerrar" class="fila">
+      <input name="contado" type="number" step="0.01" min="0" placeholder="Efectivo contado $" required>
+      <input name="notas" placeholder="Notas (opcional)">
+      <button class="primario">Cerrar turno</button>
+    </form>
+  </div>
+  <div id="msg-caja" class="msg"></div>
+  <div id="turnos-recientes" data-solo-dueno>
+    <h3>Turnos recientes</h3>
+    <table id="t-turnos"><thead><tr><th>Cajero</th><th>Abrió</th><th>Cerró</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th></th></tr></thead><tbody></tbody></table>
+  </div>
+</section>
+
 <section id="usuarios" class="tab">
   <h2>Usuarios</h2>
   <p><b>Dueño:</b> acceso total. <b>Cajero:</b> solo cobra, ve productos sin costos, maneja fiado y recibe envases.</p>
@@ -143,6 +177,8 @@
     <div><small>Cascos cobrados / reembolsados</small><b id="k-casco">$0.00 / $0.00</b></div>
     <div><small>Efectivo en caja</small><b id="k-caja">$0.00</b></div>
   </div>
+  <h3>Turnos del día</h3>
+  <table id="t-turnos-corte"><thead><tr><th>Cajero</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody></tbody></table>
   <h3>Ventas por usuario</h3>
   <table id="t-usr-corte"><thead><tr><th>Usuario</th><th>Ventas</th><th>Total</th></tr></thead><tbody></tbody></table>
   <h3>Más vendidos</h3>

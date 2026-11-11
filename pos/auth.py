@@ -11,17 +11,20 @@ from flask import Blueprint, current_app, g, jsonify, request, session
 from werkzeug.security import check_password_hash, generate_password_hash
 
 from .db import get_db
+from .validar import datos as cuerpo
 
 bp = Blueprint("auth", __name__)
 
 ROLES = ("dueno", "cajero")
 MIN_PASSWORD = 6
+MAX_PASSWORD = 200
 INTENTOS, VENTANA = 5, 300  # 5 fallos por usuario+IP cada 5 minutos
 
 CAJERO_PERMITIDO = {
     "pos.listar_productos", "pos.crear_venta", "pos.ver_venta",
     "pos.listar_clientes", "pos.crear_cliente", "pos.ver_cliente", "pos.abonar",
     "pos.devolucion_envases",
+    "caja.turno_actual", "caja.abrir_turno", "caja.movimiento", "caja.cerrar_turno",
 }
 HASH_FALSO = generate_password_hash("sin-usuario")  # iguala el tiempo de respuesta si el usuario no existe
 
@@ -86,10 +89,10 @@ def _validar_alta(d):
     nombre = str(d.get("nombre") or "").strip()
     usuario = str(d.get("usuario") or "").strip()
     password = str(d.get("password") or "")
-    if not nombre or not usuario or " " in usuario:
-        return None, "Nombre y usuario son obligatorios (el usuario no lleva espacios)"
-    if len(password) < MIN_PASSWORD:
-        return None, f"La contrasena debe tener al menos {MIN_PASSWORD} caracteres"
+    if not nombre or not usuario or " " in usuario or len(nombre) > 60 or len(usuario) > 40:
+        return None, "Nombre y usuario son obligatorios (el usuario no lleva espacios, maximo 40 caracteres)"
+    if len(password) < MIN_PASSWORD or len(password) > MAX_PASSWORD:
+        return None, f"La contrasena debe tener entre {MIN_PASSWORD} y {MAX_PASSWORD} caracteres"
     return (nombre, usuario, password), None
 
 
@@ -105,7 +108,7 @@ def configurar():
     """Primer uso: crea la cuenta del dueno. Despues de eso queda cerrado."""
     if hay_usuarios():
         return err("El sistema ya esta configurado", 409)
-    datos, error = _validar_alta(request.get_json(silent=True) or {})
+    datos, error = _validar_alta(cuerpo())
     if error:
         return err(error)
     nombre, usuario, password = datos
@@ -122,8 +125,8 @@ def configurar():
 
 @bp.post("/api/auth/login")
 def login():
-    d = request.get_json(silent=True) or {}
-    usuario, password = str(d.get("usuario") or "").strip(), str(d.get("password") or "")
+    d = cuerpo()
+    usuario, password = str(d.get("usuario") or "").strip()[:100], str(d.get("password") or "")[:MAX_PASSWORD + 1]
     fallos = current_app.extensions.setdefault("pos_fallos", {})
     llave = (usuario.lower(), request.remote_addr)
     ahora = time.time()
@@ -151,12 +154,12 @@ def cambiar_password():
     u = _cargar_usuario_para_auth()
     if not u:
         return err("Inicia sesion para continuar", 401, estado="sin_sesion")
-    d = request.get_json(silent=True) or {}
+    d = cuerpo()
     if not check_password_hash(u["hash"], str(d.get("actual") or "")):
         return err("La contrasena actual no es correcta", 403)
     nueva = str(d.get("nueva") or "")
-    if len(nueva) < MIN_PASSWORD:
-        return err(f"La contrasena debe tener al menos {MIN_PASSWORD} caracteres")
+    if not MIN_PASSWORD <= len(nueva) <= MAX_PASSWORD:
+        return err(f"La contrasena debe tener entre {MIN_PASSWORD} y {MAX_PASSWORD} caracteres")
     db = get_db()
     db.execute("UPDATE usuarios SET hash=?, sesion_version=sesion_version+1 WHERE id=?",
                (generate_password_hash(nueva), u["id"]))
@@ -176,7 +179,7 @@ def listar_usuarios():
 
 @bp.post("/api/usuarios")
 def crear_usuario():
-    d = request.get_json(silent=True) or {}
+    d = cuerpo()
     datos, error = _validar_alta(d)
     if error:
         return err(error)
@@ -198,7 +201,7 @@ def crear_usuario():
 
 @bp.put("/api/usuarios/<int:uid>")
 def editar_usuario(uid):
-    d = request.get_json(silent=True) or {}
+    d = cuerpo()
     db = get_db()
     u = db.execute("SELECT * FROM usuarios WHERE id=?", (uid,)).fetchone()
     if not u:
@@ -212,8 +215,8 @@ def editar_usuario(uid):
     sv = u["sesion_version"]
     hash_ = u["hash"]
     if d.get("password"):
-        if len(str(d["password"])) < MIN_PASSWORD:
-            return err(f"La contrasena debe tener al menos {MIN_PASSWORD} caracteres")
+        if not MIN_PASSWORD <= len(str(d["password"])) <= MAX_PASSWORD:
+            return err(f"La contrasena debe tener entre {MIN_PASSWORD} y {MAX_PASSWORD} caracteres")
         hash_, sv = generate_password_hash(str(d["password"])), sv + 1
     nombre = str(d.get("nombre", u["nombre"])).strip()
     if not nombre:

@@ -93,3 +93,22 @@ Recuerda subir `FECHA_VERSION` en `pos/__init__.py` en cada versión.
   Conviene reservar una IP fija para esa computadora en el router para que la dirección no cambie.
 - El tráfico dentro del Wi-Fi va por HTTP sin cifrar: usa una red privada con contraseña, nunca un Wi-Fi público,
   y no expongas el puerto a internet.
+
+## Turno de caja
+Cada usuario abre su turno con un fondo inicial antes de cobrar (sin turno abierto no se puede vender,
+registrar abonos ni recibir envases). Durante el turno se registran retiros e ingresos de efectivo con su motivo.
+Al cerrar, la persona cuenta el dinero **sin ver cuánto debería haber** (conteo ciego) y el sistema calcula la diferencia:
+
+`esperado = fondo + ventas en efectivo + abonos + ingresos - retiros - casco reembolsado` (el fiado no entra).
+
+El dueño ve todos los turnos, las diferencias (faltantes en rojo, sobrantes en naranja) y puede cerrar un turno que
+quedó abierto. El corte del día incluye la tabla de turnos.
+
+## Pruebas
+```bash
+pip install -r requirements.txt
+pytest                        # 137 ejecuciones: API, permisos, concurrencia, licencias, respaldos, navegador
+python tools/casos_de_prueba.py   # regenera docs/CASOS_DE_PRUEBA.md (lista de todos los casos)
+```
+La prueba de navegador (`tests/test_e2e.py`) usa Node + Playwright y se omite sola si no están instalados.
+Ver [docs/CASOS_DE_PRUEBA.md](docs/CASOS_DE_PRUEBA.md).

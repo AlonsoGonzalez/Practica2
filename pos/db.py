@@ -26,6 +26,27 @@ CREATE TABLE IF NOT EXISTS usuarios (
     activo INTEGER NOT NULL DEFAULT 1,
     sesion_version INTEGER NOT NULL DEFAULT 1
 );
+CREATE TABLE IF NOT EXISTS turnos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    usuario_id INTEGER NOT NULL REFERENCES usuarios(id),
+    abierto TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    cerrado TEXT,
+    fondo INTEGER NOT NULL CHECK (fondo >= 0),
+    contado INTEGER,
+    esperado INTEGER,
+    diferencia INTEGER,                      -- contado - esperado (negativo = faltante)
+    notas TEXT NOT NULL DEFAULT '',
+    cerrado_por INTEGER REFERENCES usuarios(id)
+);
+CREATE UNIQUE INDEX IF NOT EXISTS un_turno_abierto_por_usuario ON turnos(usuario_id) WHERE cerrado IS NULL;
+CREATE TABLE IF NOT EXISTS caja_mov (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    turno_id INTEGER NOT NULL REFERENCES turnos(id),
+    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    tipo TEXT NOT NULL CHECK (tipo IN ('retiro','ingreso')),
+    monto INTEGER NOT NULL CHECK (monto > 0),
+    motivo TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS ajustes (
     clave TEXT PRIMARY KEY,
     valor TEXT NOT NULL
@@ -47,14 +68,16 @@ CREATE TABLE IF NOT EXISTS abonos (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     cliente_id INTEGER NOT NULL REFERENCES clientes(id),
-    monto INTEGER NOT NULL CHECK (monto > 0)
+    monto INTEGER NOT NULL CHECK (monto > 0),
+    turno_id INTEGER REFERENCES turnos(id)
 );
 CREATE TABLE IF NOT EXISTS casco_mov (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
     producto_id INTEGER NOT NULL REFERENCES productos(id),
     cantidad INTEGER NOT NULL,
-    monto INTEGER NOT NULL                  -- + cobrado, - reembolsado
+    monto INTEGER NOT NULL,                 -- + cobrado, - reembolsado
+    turno_id INTEGER REFERENCES turnos(id)
 );
 CREATE TABLE IF NOT EXISTS ventas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -65,7 +88,8 @@ CREATE TABLE IF NOT EXISTS ventas (
     metodo TEXT NOT NULL DEFAULT 'efectivo',
     cliente_id INTEGER REFERENCES clientes(id),
     casco INTEGER NOT NULL DEFAULT 0,
-    usuario_id INTEGER REFERENCES usuarios(id)
+    usuario_id INTEGER REFERENCES usuarios(id),
+    turno_id INTEGER REFERENCES turnos(id)
 );
 CREATE TABLE IF NOT EXISTS venta_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -118,16 +142,25 @@ MIGRACIONES = {
     "productos": ["retornable INTEGER NOT NULL DEFAULT 0", "casco INTEGER NOT NULL DEFAULT 0",
                   "vacios INTEGER NOT NULL DEFAULT 0", "en_calle INTEGER NOT NULL DEFAULT 0"],
     "ventas": ["cliente_id INTEGER REFERENCES clientes(id)", "casco INTEGER NOT NULL DEFAULT 0",
-               "usuario_id INTEGER REFERENCES usuarios(id)"],
+               "usuario_id INTEGER REFERENCES usuarios(id)", "turno_id INTEGER REFERENCES turnos(id)"],
+    "abonos": ["turno_id INTEGER REFERENCES turnos(id)"],
+    "casco_mov": ["turno_id INTEGER REFERENCES turnos(id)"],
 }
 
 
 def get_db():
     if "db" not in g:
-        g.db = sqlite3.connect(current_app.config["DATABASE"])
+        g.db = sqlite3.connect(current_app.config["DATABASE"], timeout=15)
         g.db.row_factory = sqlite3.Row
         g.db.execute("PRAGMA foreign_keys = ON")
     return g.db
+
+
+def begin():
+    """Inicia una transaccion de escritura (bloquea a otros escritores hasta commit/cierre)."""
+    conn = get_db()
+    if not conn.in_transaction:
+        conn.execute("BEGIN IMMEDIATE")
 
 
 def close_db(_exc=None):
@@ -138,6 +171,7 @@ def close_db(_exc=None):
 
 def init_db():
     conn = get_db()
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(SCHEMA)
     for tabla, cols in MIGRACIONES.items():
         existentes = {r["name"] for r in conn.execute(f"PRAGMA table_info({tabla})")}

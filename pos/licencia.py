@@ -89,6 +89,16 @@ def evaluar(clave, llave_publica, instalacion_id, fecha_version, hoy=None):
     payload = decodificar(clave, llave_publica)
     if payload is None:
         return INVALIDA, None
+    # Una clave bien firmada pero con campos de tipo raro se considera invalida (nunca un error 500).
+    try:
+        for campo in ("tienda", "tipo", "instalacion"):
+            if payload.get(campo) is not None and not isinstance(payload[campo], str):
+                raise ValueError(campo)
+        for campo in ("expira", "actualizaciones_hasta"):
+            if payload.get(campo) is not None:
+                date.fromisoformat(payload[campo])  # TypeError/ValueError si no es una fecha AAAA-MM-DD
+    except (TypeError, ValueError):
+        return INVALIDA, None
     hoy = (hoy or date.today()).isoformat()
     if payload.get("instalacion") and payload["instalacion"] != instalacion_id:
         return OTRA_INSTALACION, payload

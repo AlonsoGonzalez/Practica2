@@ -138,3 +138,73 @@ def test_herramienta_de_linea_de_comandos(tmp_path):
         cli + ["emitir", "--privada", str(sal / "privada.pem"), "--tienda", "T", "--instalacion", instalacion(c)],
         check=True, capture_output=True, text=True).stdout.strip()
     assert c.post("/api/licencia", json={"clave": inst_clave}).status_code == 200
+
+
+# ---------- Escenarios adicionales ----------
+def firmar(priv, payload):
+    cuerpo = json.dumps(payload, sort_keys=True).encode()
+    return f"POS1.{lic.b64e(cuerpo)}.{lic.b64e(priv.sign(cuerpo))}"
+
+
+def test_payload_con_tipos_raros_es_invalido_no_error_500(ctx):
+    priv, c = ctx
+    for extra in ({"expira": 12345}, {"actualizaciones_hasta": ["2030-01-01"]}, {"expira": "manana"},
+                  {"instalacion": 5}, {"tienda": None, "actualizaciones_hasta": {}}):
+        r = c.post("/api/licencia", json={"clave": firmar(priv, {"v": 1, "tienda": "T", "tipo": "vitalicia", **extra})})
+        assert r.status_code == 400, extra
+        assert c.get("/api/licencia").status_code == 200
+
+
+def test_version_de_formato_desconocida_y_prefijo_en_minusculas(ctx):
+    priv, c = ctx
+    assert c.post("/api/licencia", json={"clave": firmar(priv, {"v": 2, "tienda": "T"})}).status_code == 400
+    ok = emitir(priv, instalacion=instalacion(c))
+    assert c.post("/api/licencia", json={"clave": ok.replace("POS1", "pos1", 1)}).status_code == 400
+    assert c.post("/api/licencia", json={"clave": ok + "x"}).status_code == 400
+
+
+def test_fechas_limite_son_inclusivas(ctx):
+    priv, c = ctx
+    inst = instalacion(c)
+    hoy = date.today().isoformat()
+    assert c.post("/api/licencia", json={"clave": emitir(priv, instalacion=inst, tipo="prueba", expira=hoy)}).status_code == 200
+    from pos import FECHA_VERSION
+    assert c.post("/api/licencia", json={"clave": emitir(priv, instalacion=inst, actualizaciones_hasta=FECHA_VERSION)}).status_code == 200
+
+
+def test_renovar_reemplaza_la_licencia_anterior(ctx):
+    priv, c = ctx
+    inst = instalacion(c)
+    c.post("/api/licencia", json={"clave": emitir(priv, instalacion=inst, tipo="prueba", expira="2099-01-01", tienda="Demo")})
+    assert c.get("/api/licencia").get_json()["tipo"] == "prueba"
+    c.post("/api/licencia", json={"clave": emitir(priv, instalacion=inst)})
+    assert c.get("/api/licencia").get_json()["tipo"] == "vitalicia"
+
+
+def test_licencia_guardada_corrupta_pide_reactivar_sin_romper(tmp_path):
+    priv, pub = par_de_llaves()
+    ruta = str(tmp_path / "x.db")
+    app = create_app(ruta, public_key_pem=pub)
+    c = app.test_client()
+    c.post("/api/licencia", json={"clave": emitir(priv, instalacion=instalacion(c))})
+    import sqlite3
+    con = sqlite3.connect(ruta); con.execute("UPDATE licencia SET clave='POS1.@@@.###\n\t\u00f1'"); con.commit(); con.close()
+    estado = create_app(ruta, public_key_pem=pub).test_client().get("/api/licencia").get_json()
+    assert estado["estado"] == "invalida" and estado["activa"] is False
+
+
+def test_reloj_atrasado_no_revive_una_prueba_vencida(tmp_path):
+    """Si alguien regresa la fecha del sistema, la prueba no vuelve a funcionar."""
+    import sqlite3
+    priv, pub = par_de_llaves()
+    ruta = str(tmp_path / "r.db")
+    c = create_app(ruta, public_key_pem=pub).test_client()
+    manana = (date.today() + timedelta(days=1)).isoformat()
+    ok = emitir(priv, instalacion=instalacion(c), tipo="prueba", expira=manana)
+    assert c.post("/api/licencia", json={"clave": ok}).status_code == 200
+    # la app "ya vio" una fecha dentro de 10 dias (el usuario la uso despues y luego atraso el reloj)
+    futuro = (date.today() + timedelta(days=10)).isoformat()
+    con = sqlite3.connect(ruta)
+    con.execute("INSERT OR REPLACE INTO ajustes (clave,valor) VALUES ('fecha_max',?)", (futuro,))
+    con.commit(); con.close()
+    assert create_app(ruta, public_key_pem=pub).test_client().get("/api/licencia").get_json()["estado"] == "expirada"

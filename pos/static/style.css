@@ -41,5 +41,6 @@ select{padding:.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem}
 .sesion{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
 button.mini{padding:.25rem .6rem;font-size:.85rem;background:#fff3;color:#fff;border-color:#fff6}
 body[data-rol=cajero] [data-solo-dueno]{display:none}
-#usuarios.active{display:block}
+#usuarios.active,#caja.active{display:block}
+.falta{color:#c00;font-weight:700}.sobra{color:#b86e00;font-weight:700}.cuadra{color:#0a7a2f;font-weight:700}
 .url{font-size:1.1rem;font-weight:700;user-select:all}

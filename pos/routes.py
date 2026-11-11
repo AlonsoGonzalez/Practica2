@@ -3,7 +3,9 @@ from datetime import date, timedelta
 
 from flask import Blueprint, g, jsonify, render_template, request
 
-from .db import get_db
+from .caja import requiere_turno
+from .db import begin, get_db
+from .validar import MAX_CANTIDAD, MAX_ENTERO, MAX_LINEAS, centavos, datos, entero, opcional, texto
 
 bp = Blueprint("pos", __name__)
 
@@ -13,11 +15,8 @@ def err(msg, code=400):
 
 
 def pesos_a_centavos(valor):
-    """Convierte 18.5 / '18.50' a 1850 sin errores de punto flotante."""
-    try:
-        return int(round(float(valor) * 100))
-    except (TypeError, ValueError):
-        raise ValueError("Monto invalido")
+    """Convierte 18.5 / '18.50' a 1850 sin errores de punto flotante (ValueError si es invalido)."""
+    return centavos(valor)
 
 
 @bp.get("/")
@@ -44,59 +43,70 @@ def listar_productos():
 
 @bp.post("/api/productos")
 def crear_producto():
-    d = request.get_json(silent=True) or {}
+    d = datos()
     try:
-        nombre, codigo = d["nombre"].strip(), d["codigo"].strip()
+        nombre, codigo = texto(d["nombre"], 120, True), texto(d["codigo"], 50, True)
+        categoria = texto(d.get("categoria") or "General", 60)
         precio = pesos_a_centavos(d["precio"])
-        costo = pesos_a_centavos(d.get("costo", 0))
-        stock = int(d.get("stock", 0))
-        minimo = int(d.get("stock_minimo", 5))
+        costo = pesos_a_centavos(opcional(d, "costo", 0))
+        stock = entero(opcional(d, "stock", 0), 0, MAX_ENTERO)
+        minimo = entero(opcional(d, "stock_minimo", 5), 0, MAX_ENTERO)
         retornable = 1 if d.get("retornable") else 0
-        casco = pesos_a_centavos(d.get("casco") or 0) if retornable else 0
+        casco = pesos_a_centavos(opcional(d, "casco", 0)) if retornable else 0
     except (KeyError, ValueError, AttributeError):
         return err("Datos de producto invalidos")
-    if not nombre or not codigo or precio < 0 or costo < 0 or casco < 0:
+    if precio < 0 or costo < 0 or casco < 0:
         return err("Datos de producto invalidos")
     db = get_db()
-    try:
-        cur = db.execute(
+    begin()
+    previo = db.execute("SELECT id, activo FROM productos WHERE codigo=?", (codigo,)).fetchone()
+    if previo and previo["activo"]:
+        return err("Ya existe un producto con ese codigo", 409)
+    if previo:  # estaba borrado: se reactiva conservando su historial
+        pid = previo["id"]
+        db.execute(
+            "UPDATE productos SET nombre=?,categoria=?,precio=?,costo=?,stock=?,stock_minimo=?,"
+            "retornable=?,casco=?,vacios=0,en_calle=0,activo=1 WHERE id=?",
+            (nombre, categoria, precio, costo, stock, minimo, retornable, casco, pid),
+        )
+    else:
+        pid = db.execute(
             "INSERT INTO productos (codigo,nombre,categoria,precio,costo,stock,stock_minimo,retornable,casco)"
             " VALUES (?,?,?,?,?,?,?,?,?)",
-            (codigo, nombre, d.get("categoria", "General"), precio, costo, stock, minimo, retornable, casco),
-        )
-    except Exception:
-        return err("Ya existe un producto con ese codigo", 409)
+            (codigo, nombre, categoria, precio, costo, stock, minimo, retornable, casco),
+        ).lastrowid
     if stock:
         db.execute(
             "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
-            (cur.lastrowid, stock, "inventario inicial"),
+            (pid, stock, "inventario inicial"),
         )
     db.commit()
-    return jsonify(id=cur.lastrowid), 201
+    return jsonify(id=pid), 201
 
 
 @bp.put("/api/productos/<int:pid>")
 def editar_producto(pid):
-    d = request.get_json(silent=True) or {}
+    d = datos()
     db = get_db()
     p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
     if not p:
         return err("Producto no encontrado", 404)
     try:
-        nombre = d.get("nombre", p["nombre"]).strip()
+        nombre = texto(d.get("nombre", p["nombre"]), 120, True)
+        categoria = texto(d.get("categoria", p["categoria"]) or "General", 60)
         precio = pesos_a_centavos(d["precio"]) if "precio" in d else p["precio"]
         costo = pesos_a_centavos(d["costo"]) if "costo" in d else p["costo"]
-        minimo = int(d.get("stock_minimo", p["stock_minimo"]))
+        minimo = entero(opcional(d, "stock_minimo", p["stock_minimo"]), 0, MAX_ENTERO)
         retornable = (1 if d["retornable"] else 0) if "retornable" in d else p["retornable"]
         casco = pesos_a_centavos(d["casco"]) if "casco" in d else p["casco"]
     except (ValueError, AttributeError):
         return err("Datos de producto invalidos")
-    if not nombre or precio < 0 or costo < 0 or casco < 0:
+    if precio < 0 or costo < 0 or casco < 0:
         return err("Datos de producto invalidos")
     db.execute(
         "UPDATE productos SET nombre=?,categoria=?,precio=?,costo=?,stock_minimo=?,retornable=?,casco=?"
         " WHERE id=?",
-        (nombre, d.get("categoria", p["categoria"]), precio, costo, minimo, retornable,
+        (nombre, categoria, precio, costo, minimo, retornable,
          casco if retornable else 0, pid),
     )
     db.commit()
@@ -114,19 +124,20 @@ def borrar_producto(pid):
 @bp.post("/api/productos/<int:pid>/ajuste")
 def ajustar_stock(pid):
     """Entrada (+) o salida/merma (-) de inventario."""
-    d = request.get_json(silent=True) or {}
+    d = datos()
     try:
-        cantidad = int(d["cantidad"])
-    except (KeyError, ValueError, TypeError):
+        cantidad = entero(d["cantidad"], -MAX_ENTERO, MAX_ENTERO)
+    except (KeyError, ValueError):
         return err("Cantidad invalida")
     if cantidad == 0:
         return err("Cantidad invalida")
     db = get_db()
+    begin()
     p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
     if not p:
         return err("Producto no encontrado", 404)
-    if p["stock"] + cantidad < 0:
-        return err("El ajuste dejaria el stock en negativo")
+    if p["stock"] + cantidad < 0 or p["stock"] + cantidad > MAX_ENTERO:
+        return err("El ajuste deja el stock fuera de rango")
     db.execute("UPDATE productos SET stock=stock+? WHERE id=?", (cantidad, pid))
     db.execute(
         "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
@@ -139,24 +150,29 @@ def ajustar_stock(pid):
 # ---------- Ventas ----------
 @bp.post("/api/ventas")
 def crear_venta():
-    d = request.get_json(silent=True) or {}
-    items = d.get("items") or []
-    if not items:
+    d = datos()
+    items = d.get("items")
+    if not isinstance(items, list) or not items:
         return err("El carrito esta vacio")
+    if len(items) > MAX_LINEAS:
+        return err("El carrito tiene demasiadas lineas")
     metodo = d.get("metodo", "efectivo")
     if metodo not in ("efectivo", "fiado"):
         return err("Metodo de pago invalido")
     db = get_db()
+    begin()  # bloquea escrituras de otros cajeros hasta terminar: nadie vende la misma ultima pieza
+    turno, falla = requiere_turno(db)
+    if falla:
+        return falla
     pedidos = {}  # producto_id -> [cantidad, envases_devueltos]
     try:
         for it in items:
-            cant, dev = int(it["cantidad"]), int(it.get("envases_devueltos", 0))
-            if cant <= 0 or dev < 0 or dev > cant:
-                raise ValueError
-            acc = pedidos.setdefault(int(it["producto_id"]), [0, 0])
+            cant = entero(it["cantidad"], 1, MAX_CANTIDAD)
+            dev = entero(it.get("envases_devueltos", 0), 0, cant)
+            acc = pedidos.setdefault(entero(it["producto_id"], 1), [0, 0])
             acc[0] += cant
             acc[1] += dev
-    except (KeyError, ValueError, TypeError):
+    except (KeyError, ValueError, TypeError, AttributeError):
         return err("Items invalidos")
     lineas, subtotal, casco_total = [], 0, 0
     for pid, (cant, dev) in pedidos.items():
@@ -177,7 +193,7 @@ def crear_venta():
     if metodo == "fiado":
         cliente = db.execute(
             "SELECT * FROM clientes WHERE id=? AND activo=1", (d.get("cliente_id"),)
-        ).fetchone()
+        ).fetchone() if isinstance(d.get("cliente_id"), (int, str)) and not isinstance(d.get("cliente_id"), bool) else None
         if not cliente:
             return err("Selecciona un cliente para vender a fiado", 400)
         if cliente["limite"] and cliente["saldo"] + total > cliente["limite"]:
@@ -192,10 +208,10 @@ def crear_venta():
             return err("El monto recibido es menor al total")
     cambio = recibido - total if metodo == "efectivo" else 0
     cur = db.execute(
-        "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco,usuario_id)"
-        " VALUES (?,?,?,?,?,?,?)",
+        "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco,usuario_id,turno_id)"
+        " VALUES (?,?,?,?,?,?,?,?)",
         (total, recibido, cambio, metodo, cliente["id"] if cliente else None, casco_total,
-         g.usuario["id"]),
+         g.usuario["id"], turno["id"]),
     )
     vid = cur.lastrowid
     for p, cant, dev, casco in lineas:
@@ -215,8 +231,8 @@ def crear_venta():
             )
             if casco:
                 db.execute(
-                    "INSERT INTO casco_mov (producto_id,cantidad,monto) VALUES (?,?,?)",
-                    (p["id"], cant - dev, casco),
+                    "INSERT INTO casco_mov (producto_id,cantidad,monto,turno_id) VALUES (?,?,?,?)",
+                    (p["id"], cant - dev, casco, turno["id"]),
                 )
     if cliente:
         db.execute("UPDATE clientes SET saldo=saldo+? WHERE id=?", (total, cliente["id"]))
@@ -242,6 +258,10 @@ def ver_venta(vid):
 @bp.get("/api/corte")
 def corte():
     fecha = request.args.get("fecha") or date.today().isoformat()
+    try:
+        fecha = date.fromisoformat(fecha).isoformat()
+    except ValueError:
+        return err("Fecha invalida (usa AAAA-MM-DD)")
     db = get_db()
     r = db.execute(
         "SELECT COUNT(*) n, COALESCE(SUM(total),0) total FROM ventas WHERE date(fecha)=?",
@@ -283,6 +303,9 @@ def corte():
     return jsonify(
         fecha=fecha,
         por_usuario=[dict(u) for u in por_usuario],
+        turnos=[dict(t) for t in db.execute(
+            "SELECT t.id, u.nombre cajero, t.abierto, t.cerrado, t.fondo, t.esperado, t.contado, t.diferencia"
+            " FROM turnos t JOIN usuarios u ON u.id=t.usuario_id WHERE date(t.abierto)=? ORDER BY t.id", (fecha,))],
         num_ventas=r["n"],
         total=r["total"],
         fiado=fiado,
@@ -314,28 +337,32 @@ def _retornable(db, pid):
 
 def _cantidad(d):
     try:
-        n = int(d["cantidad"])
-    except (KeyError, ValueError, TypeError):
+        return entero(d["cantidad"], 1, MAX_ENTERO)
+    except (KeyError, ValueError):
         return None
-    return n if n > 0 else None
 
 
 @bp.post("/api/productos/<int:pid>/devolucion")
 def devolucion_envases(pid):
     """Un cliente regresa envases vacios: se le reembolsa el casco."""
-    n = _cantidad(request.get_json(silent=True) or {})
+    n = _cantidad(datos())
     db = get_db()
+    begin()
     p = _retornable(db, pid)
     if not p:
         return err("Producto retornable no encontrado", 404)
     if n is None:
         return err("Cantidad invalida")
+    turno, falla = requiere_turno(db)
+    if falla:
+        return falla
     if n > p["en_calle"]:
         return err(f"Solo hay {p['en_calle']} envases con casco fuera de la tienda", 409)
     reembolso = n * p["casco"]
     db.execute("UPDATE productos SET en_calle=en_calle-?, vacios=vacios+? WHERE id=?", (n, n, pid))
     db.execute(
-        "INSERT INTO casco_mov (producto_id,cantidad,monto) VALUES (?,?,?)", (pid, -n, -reembolso)
+        "INSERT INTO casco_mov (producto_id,cantidad,monto,turno_id) VALUES (?,?,?,?)",
+        (pid, -n, -reembolso, turno["id"]),
     )
     db.commit()
     return jsonify(reembolso=reembolso)
@@ -344,8 +371,9 @@ def devolucion_envases(pid):
 @bp.post("/api/productos/<int:pid>/canje-proveedor")
 def canje_proveedor(pid):
     """Se entregan envases vacios al repartidor y se reciben llenos."""
-    n = _cantidad(request.get_json(silent=True) or {})
+    n = _cantidad(datos())
     db = get_db()
+    begin()
     p = _retornable(db, pid)
     if not p:
         return err("Producto retornable no encontrado", 404)
@@ -382,18 +410,19 @@ def listar_clientes():
 
 @bp.post("/api/clientes")
 def crear_cliente():
-    d = request.get_json(silent=True) or {}
-    nombre = str(d.get("nombre") or "").strip()
+    d = datos()
     try:
-        limite = pesos_a_centavos(d.get("limite") or 0)
+        nombre = texto(d.get("nombre"), 80)
+        telefono = texto(d.get("telefono"), 30)
+        limite = pesos_a_centavos(opcional(d, "limite", 0))
     except ValueError:
-        return err("Limite invalido")
+        return err("Datos de cliente invalidos")
     if not nombre or limite < 0:
         return err("Datos de cliente invalidos")
     db = get_db()
     cur = db.execute(
         "INSERT INTO clientes (nombre,telefono,limite) VALUES (?,?,?)",
-        (nombre, str(d.get("telefono") or "").strip(), limite),
+        (nombre, telefono, limite),
     )
     db.commit()
     return jsonify(id=cur.lastrowid), 201
@@ -416,12 +445,13 @@ def ver_cliente(cid):
 
 @bp.post("/api/clientes/<int:cid>/abono")
 def abonar(cid):
-    d = request.get_json(silent=True) or {}
+    d = datos()
     try:
         monto = pesos_a_centavos(d["monto"])
     except (KeyError, ValueError):
         return err("Monto invalido")
     db = get_db()
+    begin()
     c = db.execute("SELECT * FROM clientes WHERE id=? AND activo=1", (cid,)).fetchone()
     if not c:
         return err("Cliente no encontrado", 404)
@@ -429,7 +459,10 @@ def abonar(cid):
         return err("Monto invalido")
     if monto > c["saldo"]:
         return err("El abono es mayor al saldo del cliente", 409)
-    db.execute("INSERT INTO abonos (cliente_id,monto) VALUES (?,?)", (cid, monto))
+    turno, falla = requiere_turno(db)
+    if falla:
+        return falla
+    db.execute("INSERT INTO abonos (cliente_id,monto,turno_id) VALUES (?,?,?)", (cid, monto, turno["id"]))
     db.execute("UPDATE clientes SET saldo=saldo-? WHERE id=?", (monto, cid))
     db.commit()
     return jsonify(saldo=c["saldo"] - monto)
@@ -440,8 +473,8 @@ def abonar(cid):
 def sugerencia_pedido():
     """Cuanto pedir para cubrir `cobertura` dias segun el promedio vendido en `historial` dias."""
     try:
-        historial = max(1, int(request.args.get("historial", 14)))
-        cobertura = max(1, int(request.args.get("cobertura", 7)))
+        historial = min(3650, max(1, entero(request.args.get("historial", 14))))
+        cobertura = min(365, max(1, entero(request.args.get("cobertura", 7))))
     except ValueError:
         return err("Parametros invalidos")
     desde = (date.today() - timedelta(days=historial - 1)).isoformat()

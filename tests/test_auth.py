@@ -28,6 +28,8 @@ def duenio_y_cajero(app):
     assert r.status_code == 201
     c = nuevo(app)
     assert login(c, "luis", "caja123").status_code == 200
+    assert d.post("/api/turno/abrir", json={"fondo": 0}).status_code == 201
+    assert c.post("/api/turno/abrir", json={"fondo": 100}).status_code == 201
     return d, c
 
 

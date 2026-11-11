@@ -1,10 +1,12 @@
 import os
 
-from flask import Flask
+from flask import Flask, jsonify, request
+from werkzeug.exceptions import HTTPException
 
 from datetime import timedelta
 
 from . import db, licencia, paths
+from .caja import bp as caja_bp
 from .auth import bp as auth_bp, clave_secreta, exigir_login
 from .licencia_routes import bp as licencia_bp, exigir_licencia
 from .routes import bp
@@ -41,7 +43,21 @@ def create_app(db_path=None, public_key_pem=None):
     app.before_request(exigir_login)
     app.register_blueprint(licencia_bp)
     app.register_blueprint(auth_bp)
+    app.register_blueprint(caja_bp)
     app.register_blueprint(bp)
+    @app.errorhandler(HTTPException)
+    def _error_http(e):
+        if request.path.startswith("/api/"):
+            return jsonify(error=e.description or e.name), e.code
+        return e
+
+    @app.errorhandler(Exception)
+    def _error_inesperado(e):
+        app.logger.exception("Error inesperado")
+        if request.path.startswith("/api/"):
+            return jsonify(error="Error interno del servidor"), 500
+        return "Error interno del servidor", 500
+
     with app.app_context():
         db.init_db()
         app.secret_key = clave_secreta()

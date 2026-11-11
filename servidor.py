@@ -14,7 +14,7 @@ import webbrowser
 from waitress import serve
 
 from pos import create_app, paths
-from pos.respaldos import respaldar
+from pos.respaldos import respaldar_seguro
 
 
 def puerto_libre(host, inicial):
@@ -45,7 +45,7 @@ def main():
     ap.add_argument("--lan", action="store_true", help="permitir acceso desde otros dispositivos de la red")
     args = ap.parse_args()
     app = create_app()
-    respaldar(app.config["DATABASE"], os.path.join(paths.datos_dir(), "respaldos"))
+    respaldar_seguro(app.config["DATABASE"], os.path.join(paths.datos_dir(), "respaldos"))
     lan = args.lan or os.environ.get("POS_LAN") == "1"
     host = "0.0.0.0" if lan else "127.0.0.1"
     puerto = puerto_libre(host, int(os.environ.get("POS_PORT", 5000)))

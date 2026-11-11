@@ -10,6 +10,7 @@ const api = async (url, opts = {}) => {
   const data = await r.json();
   if (r.status === 402) mostrarLicencia(data);
   if (r.status === 401 && data.estado === "sin_sesion") mostrarAuth();
+  if (data.estado === "sin_turno") irATab("caja");
   if (!r.ok) throw new Error(data.error || "Error");
   return data;
 };
@@ -25,6 +26,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   if (b.dataset.tab === "clientes") cargarClientes();
   if (b.dataset.tab === "pedido") cargarPedido();
   if (b.dataset.tab === "usuarios") cargarUsuarios();
+  if (b.dataset.tab === "caja") cargarCaja();
 });
 
 // ---- Venta ----
@@ -148,6 +150,9 @@ async function cargarCorte() {
   $("#k-caja").textContent = money(c.efectivo_en_caja);
   $("#t-usr-corte tbody").innerHTML = c.por_usuario.map(u =>
     `<tr><td>${esc(u.nombre)}</td><td>${u.ventas}</td><td>${money(u.total)}</td></tr>`).join("");
+  $("#t-turnos-corte tbody").innerHTML = c.turnos.map(t =>
+    `<tr><td>${esc(t.cajero)}</td><td>${money(t.fondo)}</td><td>${t.esperado === null ? "abierto" : money(t.esperado)}</td>
+     <td>${t.contado === null ? "—" : money(t.contado)}</td><td>${difTexto(t.diferencia)}</td></tr>`).join("");
   const env = await api("/api/reportes/envases");
   $("#t-env tbody").innerHTML = env.map(e =>
     `<tr><td>${esc(e.nombre)}</td><td>${money(e.casco)}</td><td>${e.vacios}</td><td>${e.en_calle}</td><td>${money(e.casco_en_calle)}</td></tr>`).join("");
@@ -216,6 +221,60 @@ $("#form-licencia").onsubmit = async e => {
   revisarLicencia();
 };
 
+// ---- Caja (turnos) ----
+function irATab(nombre) { document.querySelector(`nav [data-tab=${nombre}]`).click(); }
+function difTexto(d) {
+  if (d === null || d === undefined) return "—";
+  if (d === 0) return `<span class="cuadra">Cuadra</span>`;
+  return d < 0 ? `<span class="falta">Faltan ${money(-d)}</span>` : `<span class="sobra">Sobran ${money(d)}</span>`;
+}
+async function cargarCaja() {
+  const t = await api("/api/turno");
+  $("#turno-cerrado").hidden = t.abierto; $("#turno-abierto").hidden = !t.abierto;
+  if (t.abierto) {
+    const r = t.turno.resumen, kpi = (n, v) => `<div><small>${n}</small><b>${v}</b></div>`;
+    $("#turno-kpis").innerHTML = kpi("Abierto desde", esc(t.turno.abierto)) + kpi("Fondo inicial", money(r.fondo)) +
+      kpi("Ventas del turno", r.num_ventas) +
+      (r.esperado === undefined ? "" :  // el cajero no ve cuanto "deberia" haber (conteo ciego)
+        kpi("Ventas en efectivo", money(r.ventas_efectivo)) + kpi("Fiado", money(r.ventas_fiado)) +
+        kpi("Abonos", money(r.abonos)) + kpi("Retiros", money(r.retiros)) + kpi("Ingresos", money(r.ingresos)) +
+        kpi("Efectivo esperado", money(r.esperado)));
+  }
+  if (document.body.dataset.rol === "dueno") {
+    const ts = await api("/api/turnos");
+    $("#t-turnos tbody").innerHTML = ts.slice(0, 30).map(x =>
+      `<tr><td>${esc(x.cajero)}</td><td>${esc(x.abierto)}</td><td>${esc(x.cerrado || "abierto")}</td><td>${money(x.fondo)}</td>
+       <td>${x.cerrado ? money(x.esperado) : money(x.resumen.esperado)}</td><td>${x.cerrado ? money(x.contado) : "—"}</td>
+       <td>${difTexto(x.diferencia)}</td>
+       <td>${x.cerrado ? "" : `<button data-cerrar-turno="${x.id}">Cerrar</button>`}</td></tr>`).join("");
+    document.querySelectorAll("[data-cerrar-turno]").forEach(b => b.onclick = async () => {
+      const c = prompt("Efectivo contado en esa caja ($)"); if (c === null || c === "") return;
+      try { await api(`/api/turnos/${b.dataset.cerrarTurno}/cerrar`, {body: {contado: c, notas: "Cerrado por el dueño"}}); cargarCaja(); }
+      catch (e) { say($("#msg-caja"), e.message, false); }
+    });
+  }
+}
+$("#form-abrir").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/turno/abrir", {body: {fondo: e.target.fondo.value}}); e.target.reset(); say($("#msg-caja"), "Turno abierto. ¡Buenas ventas!", true); cargarCaja(); }
+  catch (err) { say($("#msg-caja"), err.message, false); }
+};
+$("#form-mov").onsubmit = async e => {
+  e.preventDefault();
+  try { await api("/api/turno/movimiento", {body: Object.fromEntries(new FormData(e.target))}); e.target.reset(); say($("#msg-caja"), "Movimiento registrado", true); cargarCaja(); }
+  catch (err) { say($("#msg-caja"), err.message, false); }
+};
+$("#form-cerrar").onsubmit = async e => {
+  e.preventDefault();
+  if (!confirm("¿Cerrar el turno? Ya no podrás cobrar hasta abrir otro.")) return;
+  try {
+    const d = await api("/api/turno/cerrar", {body: Object.fromEntries(new FormData(e.target))});
+    e.target.reset(); cargarCaja();
+    $("#msg-caja").className = "msg"; $("#msg-caja").innerHTML =
+      `Turno cerrado. Esperado ${money(d.esperado)}, contado ${money(d.contado)}: ${difTexto(d.diferencia)}`;
+  } catch (err) { say($("#msg-caja"), err.message, false); }
+};
+
 // ---- Sesion y usuarios ----
 let modoAuth = "login";
 function mostrarAuth(configurado) {
@@ -236,6 +295,7 @@ function aplicarUsuario(u) {
   document.querySelectorAll("nav button, .tab").forEach(e => e.classList.remove("active"));
   document.querySelector('nav [data-tab=venta]').classList.add("active"); $("#venta").classList.add("active");
   carrito = {}; pintarCarrito(); cargarCatalogo();
+  fetch("/api/turno").then(r => r.json()).then(t => { if (!t.abierto) irATab("caja"); });
 }
 async function iniciarSesion() {
   const yo = await fetch("/api/auth/yo").then(r => r.json());

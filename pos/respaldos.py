@@ -1,4 +1,5 @@
 import glob
+import logging
 import os
 import sqlite3
 from datetime import date
@@ -20,3 +21,13 @@ def respaldar(db_path, destino, conservar=14, hoy=None):
     for viejo in sorted(glob.glob(os.path.join(destino, "pos-*.db")))[:-conservar]:
         os.remove(viejo)
     return archivo
+
+
+def respaldar_seguro(db_path, destino, conservar=14):
+    """Como respaldar(), pero un fallo (disco lleno, carpeta sin permiso, base danada)
+    se registra y NO impide que la tienda abra su sistema."""
+    try:
+        return respaldar(db_path, destino, conservar)
+    except (OSError, sqlite3.Error) as e:
+        logging.getLogger("pos").warning("No se pudo respaldar la base: %s", e)
+        return None

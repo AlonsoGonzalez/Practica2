@@ -6,6 +6,7 @@ from pos import create_app
 def client(tmp_path):
     c = create_app(str(tmp_path / "t.db")).test_client()
     assert c.post("/api/auth/configurar", json={"nombre": "Dueno", "usuario": "dueno", "password": "secreto1"}).status_code == 201
+    assert c.post("/api/turno/abrir", json={"fondo": 0}).status_code == 201
     return c
 
 
