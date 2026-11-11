@@ -1,6 +1,6 @@
 # Casos de prueba
 
-Generado con `python tools/casos_de_prueba.py`. **106 pruebas, 157 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
+Generado con `python tools/casos_de_prueba.py`. **107 pruebas, 158 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
 
 ## Ventas, inventario, fiado, envases y sugerencia de pedido (flujo base)
 `tests/test_pos.py` · 10 pruebas · 10 ejecuciones
@@ -17,7 +17,7 @@ Generado con `python tools/casos_de_prueba.py`. **106 pruebas, 157 ejecuciones**
 - Sugerencia pedido
 
 ## Escenarios límite: entradas raras, concurrencia, datos borrados, abusos
-`tests/test_escenarios.py` · 25 pruebas · 76 ejecuciones
+`tests/test_escenarios.py` · 26 pruebas · 77 ejecuciones
 
 - Un cuerpo que no es un objeto JSON nunca debe romper el servidor. _(×36)_
 - Cantidades invalidas en venta _(×10)_
@@ -44,6 +44,7 @@ Generado con `python tools/casos_de_prueba.py`. **106 pruebas, 157 ejecuciones**
 - Errores de api siempre son json
 - Cookie de sesion basura se trata como sin sesion
 - El formulario web manda "" en los campos que el tendero deja en blanco.
+- Busqueda por codigo de barras exacto
 
 ## Usuarios, roles, sesiones y permisos
 `tests/test_auth.py` · 10 pruebas · 10 ejecuciones
@@ -156,5 +157,6 @@ Generado con `python tools/casos_de_prueba.py`. **106 pruebas, 157 ejecuciones**
 - OK 11 fiado sin límite permite la venta
 - OK 12 respaldos: se ven los automáticos (incluido el del cierre de turno), respaldar ahora y confirmación antes de restaurar
 - OK 12b avisos visibles, tema oscuro y claro, ticket con total y cambio, y al imprimir solo se ve el ticket
+- OK 12c lector: cursor en buscador, en un boton o en ningun campo; sufijo Enter o Tab; codigo desconocido (con alta al momento), agotado y alta desde Inventario
 - OK 13 salir: solo se ve el inicio de sesión, sin menú ni datos detrás
 - OK 8 sin errores de JavaScript en ningun navegador

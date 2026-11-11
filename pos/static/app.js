@@ -100,6 +100,7 @@ $$("nav button").forEach(b => b.onclick = () => {
   if (t === "usuarios") cargarUsuarios();
   if (t === "caja") cargarCaja();
   if (t === "respaldos") cargarRespaldos();
+  if (t === "venta") enfocarBuscador();
 });
 
 // ---- Estado del turno (sin turno abierto no se puede cobrar) ----
@@ -136,19 +137,86 @@ async function cargarCatalogo() {
        <span class="cat">${ico(iconoCategoria(p.categoria))}${esc(p.categoria)}</span><span class="nom">${esc(p.nombre)}</span><b>${money(p.precio)}</b>
        <span class="st ${nivel}">${p.stock <= 0 ? "Agotado" : "Quedan " + p.stock}</span></button>`;
   }).join("") || `<p class="nota">No se encontraron productos.</p>`;
-  $$(".prod").forEach(b => b.onclick = () => agregar(+b.dataset.id));
+  $$(".prod").forEach(b => b.onclick = () => { agregar(productos.find(p => p.id === +b.dataset.id)); enfocarBuscador(); });
 }
-$("#buscar").oninput = cargarCatalogo;
-$("#buscar").onkeydown = e => {  // Enter con código exacto (lector de barras)
-  if (e.key !== "Enter") return;
-  const p = productos.find(p => p.codigo === e.target.value.trim()) || (productos.length === 1 && productos[0]);
-  if (p && p.stock > 0) { agregar(p.id); e.target.value = ""; cargarCatalogo(); }
+let tBuscar;
+$("#buscar").oninput = () => { clearTimeout(tBuscar); tBuscar = setTimeout(cargarCatalogo, 180); };   // un lector escribe 13 digitos en milisegundos
+
+// ---- Lector de codigos de barras ----
+// Los lectores USB y Bluetooth se comportan como un teclado: escriben el codigo y terminan con Enter (algunos con Tab).
+let audioCtx;
+function pitido(ok) {   // confirmacion sonora: agudo corto = leido; grave largo = no se pudo
+  if (localStorage.getItem("pos_sonido") === "0") return;
+  try {
+    audioCtx = audioCtx || new (window.AudioContext || window.webkitAudioContext)();
+    const o = audioCtx.createOscillator(), g = audioCtx.createGain();
+    o.frequency.value = ok ? 1000 : 220; g.gain.value = 0.08; o.connect(g); g.connect(audioCtx.destination);
+    o.start(); o.stop(audioCtx.currentTime + (ok ? 0.07 : 0.25));
+  } catch (e) {}
+}
+function toastAccion(texto, etiqueta, accion) {
+  const t = document.createElement("div"), msg = document.createElement("span"), b = document.createElement("button");
+  t.className = "toast error"; msg.textContent = texto; b.textContent = etiqueta;
+  b.onclick = () => { t.remove(); accion(); };
+  t.append(msg, b); $("#toasts").append(t); setTimeout(() => t.remove(), 9000);
+}
+async function procesarCodigo(codigo) {
+  let p = productos.find(x => x.codigo === codigo);
+  if (!p) p = (await api("/api/productos?codigo=" + encodeURIComponent(codigo)).catch(() => []))[0];
+  if (!p) {
+    pitido(false);
+    const aviso = `No encontré ningún producto con el código ${codigo}.`;
+    if (document.body.dataset.rol === "dueno") {   // el dueño puede darlo de alta al momento (un solo aviso, con el boton)
+      $("#msg-venta").textContent = aviso; $("#msg-venta").className = "msg error";
+      toastAccion(aviso, "Agregar este producto", () => {
+        irATab("inventario");
+        $("#form-producto [name=codigo]").value = codigo; $("#form-producto [name=nombre]").focus();
+      });
+    } else say($("#msg-venta"), aviso, false);
+    return;
+  }
+  if (p.stock <= 0) { pitido(false); return say($("#msg-venta"), `${p.nombre}: no hay existencias.`, false); }
+  pitido(agregar(p));
+}
+$("#buscar").onkeydown = async e => {
+  let valor = e.target.value.trim();
+  // Si quedo texto de una busqueda anterior y despues se paso el lector, el codigo llega pegado al final: se rescata el codigo.
+  const final = valor.match(/(\d{8,14})$/);
+  if (final && final[1] !== valor) valor = final[1];
+  const esCodigo = /^\d{6,}$/.test(valor);
+  if (e.key !== "Enter" && !(e.key === "Tab" && esCodigo)) return;   // Tab solo si ya parece un codigo (algunos lectores terminan con Tab)
+  if (!valor) return;
+  e.preventDefault(); clearTimeout(tBuscar);
+  const original = e.target.value;
+  e.target.value = "";
+  if (esCodigo || productos.some(x => x.codigo === valor)) await procesarCodigo(valor);
+  else if (productos.length === 1 && productos[0].stock > 0) agregar(productos[0]);   // texto con un solo resultado: se agrega
+  else {
+    // codigos con letras (Code 128, etc.): se busca por codigo exacto antes de dejarlo como texto de busqueda
+    const exacto = (await api("/api/productos?codigo=" + encodeURIComponent(valor)).catch(() => []))[0];
+    if (exacto) await procesarCodigo(valor);
+    else { e.target.value = original; return; }
+  }
+  cargarCatalogo();
 };
-function agregar(id) {
-  const p = productos.find(p => p.id === id);
-  if ((carrito[id]?.cantidad || 0) + 1 > p.stock) return say($("#msg-venta"), `No hay más existencias de ${p.nombre}.`, false);
+// Si el cursor no esta en un campo (se toco un boton, se cerro un dialogo...), lo que escribe el lector va al buscador.
+addEventListener("keydown", e => {
+  if (!$("#venta").classList.contains("active") || document.body.classList.contains("sin-sesion")) return;
+  if ($("#dlg").open || !$("#auth-overlay").hidden || !$("#licencia-overlay").hidden) return;
+  if (e.ctrlKey || e.altKey || e.metaKey || e.key.length !== 1) return;
+  if (e.target.matches?.("input, textarea, select, [contenteditable]")) return;
+  $("#buscar").focus();
+});
+function enfocarBuscador() { if (!matchMedia("(pointer: coarse)").matches) $("#buscar").focus(); }   // en tablet/celular no abre el teclado en pantalla
+$("#sonido").checked = localStorage.getItem("pos_sonido") !== "0";
+$("#sonido").onchange = e => localStorage.setItem("pos_sonido", e.target.checked ? "1" : "0");
+
+function agregar(p) {
+  const id = p.id;
+  if ((carrito[id]?.cantidad || 0) + 1 > p.stock) { say($("#msg-venta"), `No hay más existencias de ${p.nombre}.`, false); return false; }
   carrito[id] = {p, cantidad: (carrito[id]?.cantidad || 0) + 1, dev: carrito[id]?.dev || 0};
   say($("#msg-venta"), "", true); pintarCarrito();
+  return true;
 }
 const cascoLinea = l => l.p.retornable ? (l.cantidad - l.dev) * l.p.casco : 0;
 const cascoTotal = () => Object.values(carrito).reduce((s, l) => s + cascoLinea(l), 0);
@@ -231,7 +299,7 @@ $("#cobrar").onclick = async () => {
     ultimaVenta = v.id; $("#imprimir-ticket").hidden = false;
     if ($("#auto-imprimir").checked) imprimirTicket(v.id);
     carrito = {}; $("#recibido").value = ""; document.body.classList.remove("ticket-abierto");
-    pintarCarrito(); cargarCatalogo();
+    pintarCarrito(); cargarCatalogo(); enfocarBuscador();
   } catch (e) { say($("#msg-venta"), e.message, false); }
 };
 
@@ -274,6 +342,9 @@ async function cargarInventario() {
     catch (e) { say($("#msg-inv"), e.message, false); }
   });
 }
+$("#form-producto [name=codigo]").onkeydown = e => {   // el lector termina con Enter: no debe enviar el formulario a medias
+  if (e.key === "Enter") { e.preventDefault(); $("#form-producto [name=nombre]").focus(); }
+};
 $("#form-producto").onsubmit = async e => {
   e.preventDefault();
   const body = Object.fromEntries(new FormData(e.target));

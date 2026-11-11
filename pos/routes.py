@@ -28,8 +28,12 @@ def index():
 @bp.get("/api/productos")
 def listar_productos():
     q = request.args.get("q", "").strip()
+    codigo = request.args.get("codigo", "").strip()   # busqueda exacta: la usa el lector de codigos de barras
     sql = "SELECT * FROM productos WHERE activo=1"
     params = []
+    if codigo:
+        sql += " AND codigo = ?"
+        params.append(codigo)
     if q:
         sql += " AND (nombre LIKE ? OR codigo LIKE ? OR categoria LIKE ?)"
         params += [f"%{q}%"] * 3

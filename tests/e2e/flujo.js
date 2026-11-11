@@ -212,6 +212,59 @@ const tabs = p => p.locator('nav button:visible').allTextContents().then(a => a.
   await pc.emulateMedia({ media: 'screen' });
   console.log('OK 12b avisos visibles, tema oscuro y claro, ticket con total y cambio, y al imprimir solo se ve el ticket');
 
+  // 12c. Lector de códigos de barras (un teclado que escribe el código muy rápido y termina con Enter o Tab)
+  const lineasTicket = async () => (await pc.locator('#carrito tbody tr:not(.vacio)').allTextContents()).map(t => t.replace(/\s+/g, ' ').trim());
+  const escanear = async (codigo, sufijo = 'Enter', delay = 4) => { await pc.keyboard.type(codigo, { delay }); await pc.keyboard.press(sufijo); await pc.waitForTimeout(700); };
+  await pc.click('[data-tab=venta]'); await pc.selectOption('#metodo', 'efectivo'); await pc.click('#vaciar');
+  await pc.evaluate(() => fetch('/api/productos', { method: 'POST', headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ codigo: '7777777770001', nombre: 'Producto agotado', precio: 5, stock: 0 }) }));
+  assert(await pc.isChecked('#sonido'), 'el sonido al escanear viene activado');
+
+  await pc.click('#buscar'); await escanear('7501055300075');                       // 1. cursor en el buscador
+  let l = await lineasTicket();
+  assert(l.length === 1 && l[0].includes('Coca-Cola 600 ml') && l[0].includes('1'), 'escaneo 1: ' + l);
+  assert.strictEqual(await pc.inputValue('#buscar'), '', 'el buscador queda listo para el siguiente codigo');
+
+  await pc.click('#carrito button[data-d="1"]');                                    // 2. el cursor quedo en un boton del ticket (+1 manual = 2)
+  await escanear('7501055300075');
+  l = await lineasTicket();
+  assert(l[0].includes('3'), 'escaneo con el cursor en un boton debe sumar 1 (3 en total): ' + l);
+
+  await pc.mouse.click(5, 450);                                                     // 3. sin ningun campo enfocado
+  await escanear('7501055301546');
+  l = await lineasTicket();
+  assert(l.length === 2 && l.some(x => x.includes('Sprite')), 'escaneo sin campo enfocado: ' + l);
+
+  await pc.click('#buscar'); await escanear('7501055302208', 'Tab');               // 4. lector que termina con Tab
+  l = await lineasTicket();
+  assert(l.length === 3 && l.some(x => x.includes('Fanta')), 'lector con sufijo Tab: ' + l);
+
+  await pc.click('#buscar'); await escanear('1234567890123', 'Enter', 0);            // 5. rapidisimo, sin pausa entre teclas
+  assert((await pc.locator('#toasts .toast', { hasText: 'No encontré ningún producto' }).count()) === 1, 'codigo desconocido debe avisar');
+  assert.strictEqual(await pc.inputValue('#buscar'), '', 'tras un codigo desconocido el buscador se limpia');
+  assert((await lineasTicket()).length === 3, 'un codigo desconocido no agrega nada');
+
+  await pc.click('#buscar'); await escanear('7777777770001');                       // 6. producto agotado
+  assert((await pc.locator('#msg-venta').textContent()).includes('no hay existencias'), 'producto agotado debe avisar');
+  assert((await lineasTicket()).length === 3, 'un producto agotado no se agrega');
+
+  await pc.click('#toasts .toast button:has-text("Agregar este producto")');         // 7. el dueño da de alta el codigo desconocido al momento
+  await pc.waitForSelector('#inventario.active');
+  assert.strictEqual(await pc.inputValue('#form-producto [name=codigo]'), '1234567890123', 'el codigo escaneado llega al formulario');
+  await pc.fill('#form-producto [name=nombre]', 'Producto nuevo escaneado'); await pc.fill('#form-producto [name=precio]', '12'); await pc.fill('#form-producto [name=stock]', '9');
+  await pc.press('#form-producto [name=precio]', 'Enter');                           // Enter en un campo normal si envia el formulario
+  await pc.waitForFunction(() => document.querySelector('#msg-inv').textContent.includes('agregado'));
+  await pc.click('[data-tab=venta]'); await pc.waitForTimeout(500);
+  await escanear('1234567890123');                                                  // 8. ya existe: se vende con el lector
+  l = await lineasTicket();
+  assert(l.length === 4 && l.some(x => x.includes('Producto nuevo escaneado')), 'el producto recien dado de alta se escanea: ' + l);
+
+  await pc.click('[data-tab=inventario]');                                           // 9. en Inventario el lector llena el codigo y pasa al nombre
+  await pc.click('#form-producto [name=codigo]'); await pc.keyboard.type('5555555550005', { delay: 3 }); await pc.keyboard.press('Enter');
+  assert.strictEqual(await pc.evaluate(() => document.activeElement.name), 'nombre', 'tras el codigo el cursor pasa al nombre sin enviar el formulario');
+  await pc.click('[data-tab=venta]'); await pc.click('#vaciar');
+  console.log('OK 12c lector: cursor en buscador, en un boton o en ningun campo; sufijo Enter o Tab; codigo desconocido (con alta al momento), agotado y alta desde Inventario');
+
   // 13. Salir: no debe verse nada de la app detrás del inicio de sesión
   await pc.click('#btn-salir'); await pc.waitForSelector('#auth-overlay:not([hidden])');
   assert(!(await pc.isVisible('header')) && !(await pc.isVisible('main')), 'al salir no debe quedar visible el menú ni los datos');

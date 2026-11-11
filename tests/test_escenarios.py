@@ -285,3 +285,14 @@ def test_formularios_con_campos_opcionales_vacios(client):
     p = next(x for x in client.get("/api/productos").get_json() if x["codigo"] == "F1")
     assert (p["costo"], p["stock"], p["categoria"]) == (0, 0, "General")
     assert client.post("/api/clientes", json={"nombre": "Sin limite", "telefono": "", "limite": ""}).status_code == 201
+
+
+def test_busqueda_por_codigo_de_barras_exacto(client):
+    p = prod(client)
+    r = client.get(f"/api/productos?codigo={p['codigo']}").get_json()
+    assert [x["id"] for x in r] == [p["id"]]
+    assert client.get("/api/productos?codigo=7501055").get_json() == []            # un pedazo del codigo no cuenta
+    assert client.get("/api/productos?codigo=%25").get_json() == []                # ni comodines
+    assert client.get("/api/productos?codigo=9999999999999").get_json() == []
+    client.delete(f"/api/productos/{p['id']}")
+    assert client.get(f"/api/productos?codigo={p['codigo']}").get_json() == []     # un producto borrado no se vende

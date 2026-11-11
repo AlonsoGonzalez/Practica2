@@ -18,6 +18,7 @@ Origen: informe de la ronda de pruebas hecha en una PC con Windows (TODO del 11-
 - Venta en celular: barra fija con total + «Ver ticket y cobrar»; el ticket sube como hoja.
 - Sin scroll horizontal en celular (tablas como tarjetas); etiquetas visibles; botones ≥ 44 px; diálogos propios; aviso de turno cerrado; guía de primeros pasos; estados vacíos con ilustración; mensajes de error claros; teclado numérico; favicon; salir sin dejar ver la app.
 - **Ticket imprimible** (papel térmico de 80 mm) con opción de imprimir al cobrar.
+- **Lector de códigos de barras** (modo teclado, sufijo Enter o Tab): funciona con el cursor en cualquier parte, avisa si el código no existe o está agotado, el dueño puede darlo de alta al momento. Probado con escritura rápida simulada; **falta probarlo con un lector físico**.
 
 **Más bonito**
 - Sistema de diseño (rojo solo como acento, escala de espacios y tipografía, sombras suaves), encabezado compacto con pestaña activa, **íconos reales**, tarjetas de producto con ícono por categoría y existencias en color, total grande, **avisos (toasts)**, tablas con filas alternas y acciones agrupadas, **modo oscuro**, logo propio.
@@ -25,7 +26,7 @@ Origen: informe de la ronda de pruebas hecha en una PC con Windows (TODO del 11-
 ## Pendiente
 - **Firmar el instalador** (SmartScreen): requiere comprar un certificado de firma de código.
 - **Licencia ligada al ID de instalación**: las licencias reales ya lo permiten (`--instalacion`); la de prueba no lo lleva a propósito.
-- **Probar en dispositivos reales**: celular real, impresora térmica real (el ticket se probó con emulación de impresión), reinicio con inicio automático, licencia vencida/renovación a los 30 días.
+- **Probar en dispositivos reales**: lector de códigos de barras físico, celular real, impresora térmica real (el ticket se probó con emulación de impresión), reinicio con inicio automático, licencia vencida/renovación a los 30 días.
 - **Ver la ventanita en Windows** (solo se verificó que arranca y responde, no cómo se ve).
 - Herramienta de escritorio para el vendedor (emitir licencias sin terminal).
 - Recargas y pago de servicios (necesita un proveedor/agregador con contrato).

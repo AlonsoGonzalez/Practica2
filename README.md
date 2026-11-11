@@ -110,6 +110,23 @@ con lo instalado, lo desinstala y verifica que los datos se conserven**.
 - El tráfico dentro del Wi-Fi va por HTTP sin cifrar: usa una red privada con contraseña, nunca un Wi-Fi público,
   y no expongas el puerto a internet.
 
+## Lector de códigos de barras
+Funciona con cualquier lector **USB o Bluetooth en modo teclado** (el modo de fábrica de casi todos): al escanear, el lector
+"escribe" el código y termina con Enter (o Tab). No hace falta instalar controladores.
+
+1. Conecta el lector a la computadora (o empárejalo por Bluetooth con la tablet) y entra a **Venta**.
+2. Escanea un producto: se agrega al ticket (otra vez = una pieza más) y suena un pitido corto. Se puede escanear aunque el cursor
+   no esté en el buscador (por ejemplo, justo después de tocar un botón); lo escrito por el lector se dirige solo al buscador.
+3. Si el código **no existe**, suena un pitido grave y avisa; el dueño ve el botón «Agregar este producto» que abre Inventario
+   con el código ya escrito. Un producto **agotado** avisa y no se agrega.
+4. En **Inventario**, escanear en «Código de barras» pasa solo al campo «Nombre del producto».
+5. «Sonido al escanear» se puede apagar en el ticket.
+
+Si el lector escribe pero no agrega nada, probablemente no termina con Enter: en el manual del lector busca la opción
+«sufijo Enter» (o escanea el código de configuración que lo activa). Con sufijo Tab también funciona.
+No se puede leer con la **cámara** de la tablet cuando se entra por la red (`http://192.168...`): los navegadores solo permiten la cámara
+en páginas seguras (HTTPS o `localhost`); usa un lector Bluetooth.
+
 ## Turno de caja
 Cada usuario abre su turno con un fondo inicial antes de cobrar (sin turno abierto no se puede vender,
 registrar abonos ni recibir envases). Durante el turno se registran retiros e ingresos de efectivo con su motivo.
