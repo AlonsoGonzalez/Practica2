@@ -63,7 +63,7 @@ def exigir_login():
     """before_request (despues de la licencia): identifica al usuario y aplica permisos por rol."""
     g.usuario = None
     path = request.path
-    if not path.startswith("/api/") or path.startswith(("/api/licencia", "/api/auth/")):
+    if not path.startswith("/api/") or path.startswith(("/api/licencia", "/api/auth/", "/api/ping")):
         return None
     uid = session.get("uid")
     if uid:

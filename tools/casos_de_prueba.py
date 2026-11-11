@@ -19,6 +19,7 @@ AREAS = {
     "test_caja.py": "Turno de caja: apertura, movimientos, cierre y diferencias",
     "test_licencia.py": "Licencias firmadas, expiración, instalación y manipulación",
     "test_operacion.py": "Respaldos, arranque, rutas de datos y migración de bases viejas",
+    "test_arranque.py": "Arranque de la app instalada: instancia única, servidor, configuración y errores",
     "test_e2e.py": "Recorrido completo en navegador real",
 }
 

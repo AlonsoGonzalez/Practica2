@@ -1,6 +1,6 @@
 # Casos de prueba
 
-Generado con `python tools/casos_de_prueba.py`. **86 pruebas, 137 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
+Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
 
 ## Ventas, inventario, fiado, envases y sugerencia de pedido (flujo base)
 `tests/test_pos.py` · 11 pruebas · 11 ejecuciones
@@ -110,6 +110,18 @@ Generado con `python tools/casos_de_prueba.py`. **86 pruebas, 137 ejecuciones** 
 - Rutas de datos
 - Version instalada se niega a arrancar sin llave publica
 - Una tienda que ya usaba la version 1 actualiza y conserva sus productos y ventas.
+
+## Arranque de la app instalada: instancia única, servidor, configuración y errores
+`tests/test_arranque.py` · 8 pruebas · 8 ejecuciones
+
+- Ping es publico aun exigiendo licencia y sesion
+- Servidor arranca responde y se detiene
+- Activar y desactivar la tablet conserva el puerto
+- Ya corriendo distingue nuestra app de otros programas
+- Segundo doble clic no levanta otra copia
+- Configuracion persistente y a prueba de archivos danados
+- Main devuelve error y deja registro si no puede arrancar
+- Lo mismo que hace el doble clic: arranca, atiende, un segundo lanzamiento no duplica y se apaga.
 
 ## Recorrido completo en navegador real
 `tests/test_e2e.py` · 1 pruebas · 1 ejecuciones

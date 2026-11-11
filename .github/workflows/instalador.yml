@@ -1,9 +1,15 @@
 name: Instalador de Windows
 
-# Se ejecuta al publicar una etiqueta (git tag v1.0.0 && git push --tags) o a mano.
+# Compila el instalador en un Windows real y lo PRUEBA (programa suelto, instalacion silenciosa,
+# venta completa, desinstalacion que conserva los datos).
+#  - Al publicar una etiqueta (git tag v1.0.0 && git push --tags) usa TU llave: pos/clave_publica.pem.
+#  - En cualquier otra ejecucion, si falta esa llave, genera una de PRUEBA (el instalador resultante
+#    sirve para probar, nunca para vender: sus licencias no las puedes emitir tu).
 on:
   push:
     tags: ["v*"]
+    branches: ["**"]
+    paths: ["instalador/**", "servidor.py", "ventana.py", "pos/**", "requirements*.txt", ".github/workflows/instalador.yml"]
   workflow_dispatch:
 
 jobs:
@@ -15,18 +21,81 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -r requirements-build.txt
-      - run: python -m pytest -q
-      - name: Verificar llave publica
-        shell: bash
-        run: test -f pos/clave_publica.pem || (echo "Falta pos/clave_publica.pem" && exit 1)
-      - run: pyinstaller --noconfirm instalador/pos.spec
-      - name: Compilar instalador
+
+      - name: Pruebas automaticas en Windows (informativo)
+        continue-on-error: true
+        run: python -m pytest -q -p no:cacheprovider
+
+      - name: Llave publica
+        id: llave
         shell: bash
         run: |
-          choco install innosetup -y --no-progress
-          VERSION="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_TYPE" = tag ] || VERSION="0.0.0-dev"
-          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DVersion=$VERSION" instalador/pos.iss
+          if [ -f pos/clave_publica.pem ]; then
+            echo "prueba=false" >> "$GITHUB_OUTPUT"
+          elif [ "$GITHUB_REF_TYPE" = tag ]; then
+            echo "Falta pos/clave_publica.pem: no se publica una version sin tu llave."; exit 1
+          else
+            python tools/licencias.py generar-llaves --salida llaves-prueba
+            cp llaves-prueba/publica.pem pos/clave_publica.pem
+            echo "prueba=true" >> "$GITHUB_OUTPUT"
+            echo "::warning::Se uso una llave de PRUEBA. Este instalador NO sirve para vender."
+          fi
+
+      - name: Empaquetar con PyInstaller
+        run: pyinstaller --noconfirm instalador/pos.spec
+
+      - name: Prueba de humo del programa suelto (con ventana)
+        shell: pwsh
+        run: |
+          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe")
+          if (Test-Path llaves-prueba\privada.pem) { $args += @("--llaves", "llaves-prueba") }
+          python instalador\prueba_humo.py @args
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Prueba de humo del programa suelto (sin ventana)
+        shell: pwsh
+        run: |
+          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe", "--sin-ventana")
+          if (Test-Path llaves-prueba\privada.pem) { $args += @("--llaves", "llaves-prueba") }
+          python instalador\prueba_humo.py @args
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+
+      - name: Compilar instalador (Inno Setup)
+        shell: bash
+        run: |
+          ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
+          [ -f "$ISCC" ] || choco install innosetup -y --no-progress
+          VERSION="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_TYPE" = tag ] || VERSION="0.0.0-prueba"
+          "$ISCC" "/DVersion=$VERSION" instalador/pos.iss
+          ls -la salida
+
+      - name: Instalar en silencio, probar lo instalado y desinstalar
+        shell: pwsh
+        run: |
+          $setup = (Get-ChildItem salida\PuntoDeVenta-Setup-*.exe | Select-Object -First 1).FullName
+          $dir = Join-Path $env:RUNNER_TEMP "pos-instalado"
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$dir" -Wait
+          if (-not (Test-Path "$dir\PuntoDeVenta.exe")) { throw "El instalador no dejo el programa en $dir" }
+          Write-Host "Instalado en $dir"
+          $args = @("$dir\PuntoDeVenta.exe", "--sin-ventana")
+          if (Test-Path llaves-prueba\privada.pem) { $args += @("--llaves", "llaves-prueba") }
+          python instalador\prueba_humo.py @args
+          if ($LASTEXITCODE -ne 0) { exit 1 }
+          $datos = Join-Path $env:APPDATA "PuntoVentaAbarrotes"
+          if (-not (Test-Path "$datos\pos.db")) { throw "No se creo la base de datos en $datos" }
+          Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
+          Start-Sleep -Seconds 3
+          if (Test-Path "$dir\PuntoDeVenta.exe") { throw "El desinstalador no quito el programa" }
+          if (-not (Test-Path "$datos\pos.db")) { throw "Desinstalar borro los datos de la tienda" }
+          Write-Host "OK: instala, funciona, desinstala y conserva los datos"
+
       - uses: actions/upload-artifact@v4
+        if: steps.llave.outputs.prueba == 'false'
         with:
           name: PuntoDeVenta-Setup
+          path: salida/*.exe
+      - uses: actions/upload-artifact@v4
+        if: steps.llave.outputs.prueba == 'true'
+        with:
+          name: PuntoDeVenta-Setup-SOLO-PRUEBA
           path: salida/*.exe

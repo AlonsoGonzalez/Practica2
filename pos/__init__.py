@@ -30,6 +30,7 @@ def create_app(db_path=None, public_key_pem=None):
     app = Flask(__name__)
     app.config["DATABASE"] = db_path or os.environ.get(
         "POS_DB", os.path.join(paths.datos_dir(), "pos.db"))
+    os.makedirs(os.path.dirname(os.path.abspath(app.config["DATABASE"])), exist_ok=True)
     app.config["FECHA_VERSION"] = FECHA_VERSION
     app.config["LICENSE_PUBLIC_KEY"] = _leer_llave_publica(public_key_pem)
     # La version instalada siempre exige licencia; en desarrollo es opcional.
@@ -41,6 +42,10 @@ def create_app(db_path=None, public_key_pem=None):
     app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
     app.before_request(exigir_licencia)  # 1o licencia, 2o sesion y permisos
     app.before_request(exigir_login)
+    @app.get("/api/ping")
+    def ping():
+        return jsonify(app="punto-de-venta", version=VERSION)
+
     app.register_blueprint(licencia_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(caja_bp)

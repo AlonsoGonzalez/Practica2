@@ -1,20 +1,31 @@
-"""Punto de entrada de produccion: lo que ejecuta el instalador.
+"""Punto de entrada de produccion: lo que ejecuta el instalador (doble clic, sin terminal).
 
-Sirve la app con waitress en esta misma computadora y abre el navegador.
-Opciones:
-  --lan      (o POS_LAN=1) permite entrar desde una tablet/celular de la misma red Wi-Fi
-  POS_PORT   puerto (por defecto 5000; si esta ocupado prueba los siguientes)
+Arranca el servidor en esta computadora, abre el navegador y muestra una ventanita de control.
+Si ya estaba abierto, solo vuelve a abrir el navegador (nunca levanta dos copias).
+
+Opciones (solo para soporte tecnico):
+  --lan          permitir acceso desde tablets/celulares (tambien se activa desde la ventana)
+  --sin-ventana  modo consola, sin ventana (servidores, pruebas)
+  POS_PORT       puerto preferido (por defecto 5000)
+  POS_NO_BROWSER=1  no abrir el navegador
 """
 import argparse
+import json
+import logging
 import os
 import socket
+import sys
 import threading
+import traceback
+import urllib.request
 import webbrowser
 
-from waitress import serve
+from waitress import create_server
 
-from pos import create_app, paths
+from pos import config, create_app, paths
 from pos.respaldos import respaldar_seguro
+
+PUERTO_INICIAL = 5000
 
 
 def puerto_libre(host, inicial):
@@ -23,6 +34,18 @@ def puerto_libre(host, inicial):
             if s.connect_ex(("127.0.0.1", puerto)) != 0:  # nadie escucha: esta libre
                 return puerto
     raise RuntimeError("No hay un puerto libre entre %d y %d" % (inicial, inicial + 19))
+
+
+def ya_corriendo(inicial=PUERTO_INICIAL):
+    """Puerto de un Punto de Venta que ya esta abierto en esta computadora (o None)."""
+    for puerto in range(inicial, inicial + 20):
+        try:
+            with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/ping", timeout=0.7) as r:
+                if json.load(r).get("app") == "punto-de-venta":
+                    return puerto
+        except (OSError, ValueError, AttributeError):
+            continue
+    return None
 
 
 def urls_lan(puerto):
@@ -40,28 +63,128 @@ def urls_lan(puerto):
     return urls
 
 
-def main():
+class Servidor:
+    """Servidor waitress en un hilo, que se puede detener y reiniciar (para activar/desactivar la tablet)."""
+
+    def __init__(self, app, lan=False, puerto_inicial=PUERTO_INICIAL):
+        self.app, self.lan, self.puerto_inicial = app, lan, puerto_inicial
+        self.puerto, self._server, self._hilo = None, None, None
+
+    @property
+    def url(self):
+        return f"http://localhost:{self.puerto}"
+
+    def urls_lan(self):
+        return urls_lan(self.puerto) if self.lan else []
+
+    def iniciar(self):
+        host = "0.0.0.0" if self.lan else "127.0.0.1"
+        self.puerto = puerto_libre(host, self.puerto_inicial)
+        self._server = create_server(self.app, host=host, port=self.puerto, threads=4)
+        self.app.config["LAN_URLS"] = self.urls_lan()
+        self._hilo = threading.Thread(target=self._server.run, daemon=True)
+        self._hilo.start()
+
+    def detener(self):
+        if self._server:
+            self._server.close()
+            self._hilo.join(10)
+            self._server = None
+
+    def reiniciar(self, lan):
+        """Cambia el modo de red conservando el mismo puerto; si falla, vuelve a como estaba."""
+        anterior, puerto = self.lan, self.puerto
+        self.detener()
+        self.lan, self.puerto_inicial = lan, puerto
+        try:
+            self.iniciar()
+        except OSError:
+            self.lan = anterior
+            self.iniciar()
+            raise
+
+
+def configurar_salida():
+    """Sin consola (version instalada) no hay stdout: todo va a un archivo de registro."""
+    registro = os.path.join(paths.datos_dir(), "logs")
+    os.makedirs(registro, exist_ok=True)
+    ruta = os.path.join(registro, "pos.log")
+    if sys.stdout is None or sys.stderr is None:
+        sys.stdout = sys.stderr = open(ruta, "a", encoding="utf-8", buffering=1)
+    raiz = logging.getLogger()
+    raiz.setLevel(logging.INFO)
+    if not any(getattr(h, "baseFilename", None) == os.path.abspath(ruta) for h in raiz.handlers):
+        h = logging.FileHandler(ruta, encoding="utf-8")
+        h.setFormatter(logging.Formatter("%(asctime)s %(levelname)s %(message)s"))
+        raiz.addHandler(h)
+    return ruta
+
+
+def avisar_error(titulo, mensaje):
+    try:
+        import tkinter
+        from tkinter import messagebox
+        raiz = tkinter.Tk(); raiz.withdraw()
+        messagebox.showerror(titulo, mensaje)
+        raiz.destroy()
+    except Exception:  # sin pantalla o sin tkinter: queda en el registro
+        print(f"{titulo}: {mensaje}")
+
+
+def bucle_consola(srv):
+    print(f"Punto de Venta listo en {srv.url}  (datos en {paths.datos_dir()})")
+    for u in srv.urls_lan():
+        print("   Desde la tablet o el celular:", u)
+    print("Deja esta ventana abierta mientras uses el sistema. Cierrala para apagarlo.")
+    try:
+        threading.Event().wait()
+    except KeyboardInterrupt:
+        srv.detener()
+
+
+def main(argv=None):
     ap = argparse.ArgumentParser(description="Punto de Venta")
     ap.add_argument("--lan", action="store_true", help="permitir acceso desde otros dispositivos de la red")
-    args = ap.parse_args()
-    app = create_app()
-    respaldar_seguro(app.config["DATABASE"], os.path.join(paths.datos_dir(), "respaldos"))
-    lan = args.lan or os.environ.get("POS_LAN") == "1"
-    host = "0.0.0.0" if lan else "127.0.0.1"
-    puerto = puerto_libre(host, int(os.environ.get("POS_PORT", 5000)))
-    url = f"http://localhost:{puerto}"
-    print(f"Punto de Venta listo en {url}  (datos en {paths.datos_dir()})")
-    if lan:
-        app.config["LAN_URLS"] = urls_lan(puerto)
-        print("Desde la tablet o el celular (mismo Wi-Fi) abre:")
-        for u in app.config["LAN_URLS"]:
-            print("   ", u)
-        print("Si Windows pregunta por el Firewall, permite el acceso en redes privadas.")
-    print("Deja esta ventana abierta mientras uses el sistema. Cierrala para apagarlo.")
-    if os.environ.get("POS_NO_BROWSER") != "1":
-        threading.Timer(1.0, webbrowser.open, args=[url]).start()
-    serve(app, host=host, port=puerto, threads=4)
+    ap.add_argument("--sin-ventana", action="store_true", help="modo consola, sin ventana")
+    args = ap.parse_args(argv)
+    registro = configurar_salida()
+    abrir = os.environ.get("POS_NO_BROWSER") != "1"
+
+    existente = ya_corriendo(int(os.environ.get("POS_PORT", PUERTO_INICIAL)))
+    if existente:  # doble clic con la app ya abierta: solo se vuelve a abrir el navegador
+        if abrir:
+            webbrowser.open(f"http://localhost:{existente}")
+        return 0
+    try:
+        app = create_app()
+        respaldar_seguro(app.config["DATABASE"], os.path.join(paths.datos_dir(), "respaldos"))
+        cfg = config.cargar()
+        srv = Servidor(app, lan=args.lan or cfg["lan"], puerto_inicial=int(os.environ.get("POS_PORT", PUERTO_INICIAL)))
+        srv.iniciar()
+        logging.info("Servidor listo en %s", srv.url)
+        navegador = lambda: webbrowser.open(srv.url)
+        if abrir:
+            threading.Timer(1.0, navegador).start()
+        if not args.sin_ventana:
+            try:
+                import ventana
+                ventana.correr(srv, navegador, os.path.join(paths.datos_dir(), "respaldos"),
+                               lambda v: config.guardar({**cfg, "lan": v}))
+                return 0
+            except ImportError:  # esta instalacion de Python no trae tkinter
+                logging.warning("Sin tkinter: modo consola")
+            except Exception as e:  # TclError: no hay pantalla
+                if e.__class__.__name__ != "TclError":
+                    raise
+                logging.warning("Sin pantalla: modo consola")
+        bucle_consola(srv)
+        return 0
+    except Exception:
+        logging.exception("El sistema no pudo arrancar")
+        avisar_error("Punto de Venta", "El sistema no pudo arrancar.\n\nDetalle técnico guardado en:\n" + registro
+                     + "\n\n" + traceback.format_exc().splitlines()[-1])
+        return 1
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())

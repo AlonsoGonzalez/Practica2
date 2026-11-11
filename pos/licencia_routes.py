@@ -90,7 +90,7 @@ def activar_licencia():
 def exigir_licencia():
     """before_request: bloquea la API si la licencia no esta activa."""
     path = request.path
-    if not path.startswith("/api/") or path.startswith("/api/licencia"):
+    if not path.startswith("/api/") or path.startswith(("/api/licencia", "/api/ping")):
         return None
     estado, payload = estado_actual()
     if estado in (lic.ACTIVA, lic.DESARROLLO):
