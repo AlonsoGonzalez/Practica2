@@ -17,7 +17,7 @@ Los montos se guardan en centavos (enteros) para evitar errores de redondeo.
 ```bash
 python3 -m venv .venv && . .venv/bin/activate
 pip install -r requirements.txt
-python run.py          # http://localhost:5000
+python servidor.py     # http://localhost:5000  (modo produccion; `python run.py` es solo para desarrollo)
 pytest                 # pruebas
 ```
 La base de datos `pos.db` se crea sola con productos de ejemplo.
