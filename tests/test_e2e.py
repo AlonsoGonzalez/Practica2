@@ -13,11 +13,15 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def _node_path():
-    if not shutil.which("node") or not shutil.which("npm"):
+    node, npm = shutil.which("node"), shutil.which("npm")   # rutas completas: en Windows npm es un .cmd
+    if not node or not npm:
         return None
-    ruta = subprocess.run(["npm", "root", "-g"], capture_output=True, text=True).stdout.strip()
-    ok = subprocess.run(["node", "-e", "require('playwright')"], env={**os.environ, "NODE_PATH": ruta},
-                        capture_output=True).returncode == 0
+    try:
+        ruta = subprocess.run([npm, "root", "-g"], capture_output=True, text=True, timeout=60).stdout.strip()
+        ok = subprocess.run([node, "-e", "require('playwright')"], env={**os.environ, "NODE_PATH": ruta},
+                            capture_output=True, timeout=60).returncode == 0
+    except (OSError, subprocess.TimeoutExpired):
+        return None
     return ruta if ok else None
 
 

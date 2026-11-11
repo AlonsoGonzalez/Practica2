@@ -71,8 +71,11 @@ def main():
     ap.add_argument("exe")
     ap.add_argument("--llaves", help="carpeta con privada.pem (permite probar activacion, venta y cierre)")
     ap.add_argument("--sin-ventana", action="store_true")
+    ap.add_argument("--datos", help="carpeta de datos propia (POS_DATA_DIR); sin ella usa la de la instalacion real")
     a = ap.parse_args()
     env = {**os.environ, "POS_NO_BROWSER": "1", "POS_SIN_DIALOGOS": "1"}
+    if a.datos:
+        env["POS_DATA_DIR"] = os.path.abspath(a.datos)
     args = [a.exe] + (["--sin-ventana"] if a.sin_ventana else [])
     print(f"Probando {a.exe} {'(sin ventana)' if a.sin_ventana else '(con ventana)'}")
     if puertos_activos():

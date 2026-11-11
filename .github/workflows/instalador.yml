@@ -52,7 +52,7 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe")
+          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe", "--datos", "$env:RUNNER_TEMP\datos-con-ventana")
           if (Test-Path llaves-prueba\privada.pem) { $args += @("--llaves", "llaves-prueba") }
           python instalador\prueba_humo.py @args
           if ($LASTEXITCODE -ne 0) { exit 1 }
@@ -61,7 +61,7 @@ jobs:
         timeout-minutes: 10
         shell: pwsh
         run: |
-          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe", "--sin-ventana")
+          $args = @("dist\PuntoDeVenta\PuntoDeVenta.exe", "--sin-ventana", "--datos", "$env:RUNNER_TEMP\datos-sin-ventana")
           if (Test-Path llaves-prueba\privada.pem) { $args += @("--llaves", "llaves-prueba") }
           python instalador\prueba_humo.py @args
           if ($LASTEXITCODE -ne 0) { exit 1 }

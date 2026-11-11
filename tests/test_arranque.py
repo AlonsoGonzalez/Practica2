@@ -124,13 +124,19 @@ def test_programa_completo_como_proceso_aparte(tmp_path):
     puerto = puerto_cualquiera()
     env = {**os.environ, "POS_DATA_DIR": str(tmp_path / "d"), "POS_NO_BROWSER": "1", "POS_PORT": str(puerto),
            "POS_DB": str(tmp_path / "d" / "pos.db"), "PYTHONPATH": RAIZ, "POS_SIN_DIALOGOS": "1"}
+    salida = open(tmp_path / "salida.txt", "w+")
     p = subprocess.Popen([sys.executable, "servidor.py", "--sin-ventana"], cwd=RAIZ, env=env,
-                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+                         stdout=salida, stderr=subprocess.STDOUT)
     try:
         for _ in range(60):
-            if escucha(puerto):
+            if escucha(puerto) or p.poll() is not None:
                 break
             time.sleep(0.25)
+        if not escucha(puerto):
+            salida.flush(); salida.seek(0)
+            log = tmp_path / "d" / "logs" / "pos.log"
+            pytest.fail(f"el programa no escucha (codigo de salida: {p.poll()})\n--- salida ---\n{salida.read()}"
+                        f"\n--- pos.log ---\n{log.read_text() if log.exists() else '(sin registro)'}")
         assert get(f"http://localhost:{puerto}/api/ping")["app"] == "punto-de-venta"
         segundo = subprocess.run([sys.executable, "servidor.py", "--sin-ventana"], cwd=RAIZ, env=env, timeout=30)
         assert segundo.returncode == 0 and not escucha(puerto + 1)

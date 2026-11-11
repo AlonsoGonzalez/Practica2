@@ -1,4 +1,5 @@
 import json
+import os
 import subprocess
 import sys
 from datetime import date, timedelta
@@ -119,7 +120,8 @@ def test_herramienta_de_linea_de_comandos(tmp_path):
     cli = [sys.executable, "tools/licencias.py"]
     sal = tmp_path / "llaves"
     subprocess.run(cli + ["generar-llaves", "--salida", str(sal)], check=True, capture_output=True)
-    assert (sal / "privada.pem").stat().st_mode & 0o077 == 0  # solo el dueño puede leerla
+    if os.name != "nt":   # Windows no tiene permisos estilo POSIX
+        assert (sal / "privada.pem").stat().st_mode & 0o077 == 0  # solo el dueño puede leerla
     assert subprocess.run(cli + ["generar-llaves", "--salida", str(sal)], capture_output=True).returncode != 0
     clave = subprocess.run(
         cli + ["emitir", "--privada", str(sal / "privada.pem"), "--tienda", "Mi Tienda",
