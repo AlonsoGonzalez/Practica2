@@ -28,7 +28,10 @@ jobs:
       - name: Pruebas automaticas en Windows (informativo)
         continue-on-error: true
         timeout-minutes: 15
-        run: python -m pytest -q -p no:cacheprovider --durations=8
+        shell: pwsh
+        run: |
+          python -m pytest -q -p no:cacheprovider --durations=8 2>&1 | Tee-Object -FilePath tests.log
+          exit $LASTEXITCODE
 
       - name: Llave publica
         id: llave
@@ -68,6 +71,8 @@ jobs:
 
       - name: Compilar instalador (Inno Setup)
         shell: bash
+        env:
+          MSYS_NO_PATHCONV: "1"   # Git Bash convertiria /DVersion=... en una ruta de archivo
         run: |
           ISCC="/c/Program Files (x86)/Inno Setup 6/ISCC.exe"
           [ -f "$ISCC" ] || choco install innosetup -y --no-progress
@@ -95,6 +100,11 @@ jobs:
           if (Test-Path "$dir\PuntoDeVenta.exe") { throw "El desinstalador no quito el programa" }
           if (-not (Test-Path "$datos\pos.db")) { throw "Desinstalar borro los datos de la tienda" }
           Write-Host "OK: instala, funciona, desinstala y conserva los datos"
+
+      - name: Resumen de las pruebas automaticas en Windows
+        if: always()
+        shell: pwsh
+        run: Get-Content tests.log -Tail 14
 
       - uses: actions/upload-artifact@v4
         if: steps.llave.outputs.prueba == 'false'
