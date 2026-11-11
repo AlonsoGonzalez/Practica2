@@ -57,29 +57,39 @@ define `POS_REQUIRE_LICENSE=1` para que no arranque sin llave pública.
 **Cada tienda corre el sistema en su propia computadora: no hace falta dominio, hosting ni internet.**
 La licencia también se valida sin conexión.
 
-- `servidor.py` es lo que ejecuta el instalador: sirve la app con waitress en `http://localhost:5000`
-  (si el puerto está ocupado usa el siguiente) y abre el navegador. `POS_LAN=1` la expone en la red local
-  para usar la caja desde una tablet o celular de la tienda (ver advertencia de seguridad abajo).
-- Los datos viven en `%APPDATA%\PuntoVentaAbarrotes\` (Windows), fuera de la carpeta del programa:
-  actualizar o desinstalar **no** borra la base de datos. Cada día que se abre la app se guarda una copia en
-  `respaldos\` (se conservan las últimas 14). Pide al cliente copiar esa carpeta a una USB de vez en cuando.
+### Para el cliente final (sin terminal)
+1. Doble clic en `PuntoDeVenta-Setup-….exe` y *Siguiente* hasta terminar (opcional: acceso directo en el escritorio
+   y abrirlo solo al encender la computadora).
+2. Abrir **Punto de Venta** desde el escritorio o el menú Inicio. Aparece una ventanita con el botón
+   **Abrir el sistema** y se abre el navegador solo.
+3. La primera vez pide activar la licencia (el ID de instalación se muestra en pantalla) y crear la cuenta del dueño.
+
+La ventanita también permite **usar el sistema desde una tablet o celular** (casilla + dirección que se escribe en la tablet),
+abrir la carpeta de respaldos y cerrar el sistema. Si se hace doble clic otra vez con el sistema abierto, solo se
+vuelve a abrir el navegador (nunca queda una segunda copia). Actualizar = ejecutar el instalador nuevo encima.
+
+- Los datos viven en `%APPDATA%\PuntoVentaAbarrotes\` (base de datos, `respaldos\`, `logs\pos.log`, `config.json`),
+  fuera de la carpeta del programa: actualizar o desinstalar **no** los borra. Cada día que se abre el sistema se
+  guarda una copia (se conservan las últimas 14). Pide al cliente copiar `respaldos` a una USB de vez en cuando.
+- Si algo falla al arrancar, aparece un aviso y el detalle técnico queda en `logs\pos.log`.
 - La versión instalada **siempre exige licencia** y necesita `pos/clave_publica.pem` al compilar.
 
-### Compilar el instalador de Windows
-1. Genera tus llaves y copia `pos/clave_publica.pem` (ver sección Licencias) y súbela al repo.
-2. `git tag v1.0.0 && git push --tags`: la acción de GitHub (`.github/workflows/instalador.yml`) compila con
-   PyInstaller + Inno Setup y deja `PuntoDeVenta-Setup-1.0.0.exe` como artefacto de la ejecución.
-   También se puede lanzar a mano desde la pestaña Actions.
-3. Localmente (en Windows): `pip install -r requirements-build.txt`, `pyinstaller --noconfirm instalador/pos.spec`,
-   `iscc /DVersion=1.0.0 instalador\pos.iss`.
+### Cómo se obtiene el instalador (GitHub compila y prueba en Windows)
+El flujo `.github/workflows/instalador.yml` corre en un Windows real: ejecuta las pruebas, empaqueta con PyInstaller,
+prueba el programa suelto (con y sin ventana), compila con Inno Setup, **lo instala en silencio, vende y cierra caja
+con lo instalado, lo desinstala y verifica que los datos se conserven**.
+- Cada push que toque el programa lo ejecuta. Sin tu llave genera una de **prueba** (artefacto `…SOLO-PRUEBA`,
+  no sirve para vender). Se descarga en GitHub → *Actions* → la ejecución → *Artifacts*.
+- Para **vender**: genera tus llaves (sección Licencias), sube `pos/clave_publica.pem`, y publica una etiqueta:
+  `git tag v1.0.0 && git push --tags`. Esa ejecución usa tu llave y deja el artefacto `PuntoDeVenta-Setup`.
+- Windows mostrará "SmartScreen protegió su PC" porque el instalador no está firmado: *Más información → Ejecutar de todas formas*.
+  Un certificado de firma de código lo evita (cuesta por año).
+- Sin GitHub, en una PC con Windows: `pip install -r requirements-build.txt`, `pyinstaller --noconfirm instalador/pos.spec`,
+  `iscc /DVersion=1.0.0 instalador\pos.iss`. `python servidor.py --sin-ventana` corre sin ventana (soporte técnico).
 
 ### Entregar una venta
 1. El cliente instala, abre el programa y te manda el **ID de instalación** que aparece en pantalla.
 2. Emites su clave (`tools/licencias.py emitir ...`) y se la envías; la pega y queda activado.
-
-### Actualizar a un cliente
-Basta con que ejecute el instalador de la versión nueva encima: conserva sus datos y su licencia.
-Recuerda subir `FECHA_VERSION` en `pos/__init__.py` en cada versión.
 
 ### Usuarios y acceso desde tablet
 - La primera vez que se abre, el sistema pide crear la cuenta del **dueño**. Después hay dos roles:
@@ -87,8 +97,8 @@ Recuerda subir `FECHA_VERSION` en `pos/__init__.py` en cada versión.
   El dueño administra usuarios en la pestaña *Usuarios*; cada venta queda registrada con quién la hizo.
 - Contraseñas con hash (scrypt), bloqueo tras 5 intentos fallidos, sesión de 12 h y cookie `HttpOnly`/`SameSite=Lax`.
   Desactivar a un usuario o cambiarle la contraseña cierra sus sesiones abiertas al instante.
-- **Tablet/celular:** abrir el programa con el acceso directo *"Punto de Venta (con acceso desde tablet)"*
-  (o `python servidor.py --lan`). La pestaña *Usuarios* muestra la dirección (ej. `http://192.168.1.50:5000`) que se
+- **Tablet/celular:** marcar la casilla "Permitir usar el sistema desde una tablet o celular" de la ventanita
+  (o `python servidor.py --lan`). La ventanita y la pestaña *Usuarios* muestran la dirección (ej. `http://192.168.1.50:5000`) que se
   escribe en el navegador de la tablet, conectada al mismo Wi-Fi. La computadora debe estar encendida con el programa abierto.
   Conviene reservar una IP fija para esa computadora en el router para que la dirección no cambie.
 - El tráfico dentro del Wi-Fi va por HTTP sin cifrar: usa una red privada con contraseña, nunca un Wi-Fi público,
