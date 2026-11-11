@@ -51,3 +51,35 @@ versión posterior pide renovar. Verifica una clave con `python tools/licencias.
 
 Sin `pos/clave_publica.pem` la app corre en **modo desarrollo** (sin licencia). En producción
 define `POS_REQUIRE_LICENSE=1` para que no arranque sin llave pública.
+
+## Instalador y producción
+
+**Cada tienda corre el sistema en su propia computadora: no hace falta dominio, hosting ni internet.**
+La licencia también se valida sin conexión.
+
+- `servidor.py` es lo que ejecuta el instalador: sirve la app con waitress en `http://localhost:5000`
+  (si el puerto está ocupado usa el siguiente) y abre el navegador. `POS_LAN=1` la expone en la red local
+  para usar la caja desde una tablet o celular de la tienda (ver advertencia de seguridad abajo).
+- Los datos viven en `%APPDATA%\PuntoVentaAbarrotes\` (Windows), fuera de la carpeta del programa:
+  actualizar o desinstalar **no** borra la base de datos. Cada día que se abre la app se guarda una copia en
+  `respaldos\` (se conservan las últimas 14). Pide al cliente copiar esa carpeta a una USB de vez en cuando.
+- La versión instalada **siempre exige licencia** y necesita `pos/clave_publica.pem` al compilar.
+
+### Compilar el instalador de Windows
+1. Genera tus llaves y copia `pos/clave_publica.pem` (ver sección Licencias) y súbela al repo.
+2. `git tag v1.0.0 && git push --tags`: la acción de GitHub (`.github/workflows/instalador.yml`) compila con
+   PyInstaller + Inno Setup y deja `PuntoDeVenta-Setup-1.0.0.exe` como artefacto de la ejecución.
+   También se puede lanzar a mano desde la pestaña Actions.
+3. Localmente (en Windows): `pip install -r requirements-build.txt`, `pyinstaller --noconfirm instalador/pos.spec`,
+   `iscc /DVersion=1.0.0 instalador\pos.iss`.
+
+### Entregar una venta
+1. El cliente instala, abre el programa y te manda el **ID de instalación** que aparece en pantalla.
+2. Emites su clave (`tools/licencias.py emitir ...`) y se la envías; la pega y queda activado.
+
+### Actualizar a un cliente
+Basta con que ejecute el instalador de la versión nueva encima: conserva sus datos y su licencia.
+Recuerda subir `FECHA_VERSION` en `pos/__init__.py` en cada versión.
+
+> **Seguridad:** la app todavía no tiene usuarios ni contraseña. Por defecto solo escucha en `localhost`.
+> No actives `POS_LAN=1` en redes que no sean de confianza ni la expongas a internet sin agregar login.

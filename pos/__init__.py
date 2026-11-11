@@ -2,7 +2,7 @@ import os
 
 from flask import Flask
 
-from . import db, licencia
+from . import db, licencia, paths
 from .licencia_routes import bp as licencia_bp, exigir_licencia
 from .routes import bp
 
@@ -11,8 +11,7 @@ from .routes import bp
 VERSION = "1.0.0"
 FECHA_VERSION = "2026-11-11"
 
-RAIZ = os.path.dirname(os.path.dirname(__file__))
-LLAVE_PUBLICA_PATH = os.path.join(os.path.dirname(__file__), "clave_publica.pem")
+LLAVE_PUBLICA_PATH = paths.recurso("pos", "clave_publica.pem")
 
 
 def _leer_llave_publica(pem):
@@ -24,11 +23,14 @@ def _leer_llave_publica(pem):
 
 def create_app(db_path=None, public_key_pem=None):
     app = Flask(__name__)
-    app.config["DATABASE"] = db_path or os.environ.get("POS_DB", os.path.join(RAIZ, "pos.db"))
+    app.config["DATABASE"] = db_path or os.environ.get(
+        "POS_DB", os.path.join(paths.datos_dir(), "pos.db"))
     app.config["FECHA_VERSION"] = FECHA_VERSION
     app.config["LICENSE_PUBLIC_KEY"] = _leer_llave_publica(public_key_pem)
-    if os.environ.get("POS_REQUIRE_LICENSE") == "1" and app.config["LICENSE_PUBLIC_KEY"] is None:
-        raise RuntimeError("POS_REQUIRE_LICENSE=1 pero falta pos/clave_publica.pem")
+    # La version instalada siempre exige licencia; en desarrollo es opcional.
+    exigir = os.environ.get("POS_REQUIRE_LICENSE") == "1" or paths.empaquetada()
+    if exigir and app.config["LICENSE_PUBLIC_KEY"] is None:
+        raise RuntimeError("POS_REQUIRE_LICENSE=1 pero falta pos/clave_publica.pem (la version instalada debe incluirla)")
     db.init_app(app)
     app.before_request(exigir_licencia)
     app.register_blueprint(licencia_bp)

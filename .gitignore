@@ -6,3 +6,6 @@ __pycache__/
 llaves/
 privada.pem
 *.key
+build/
+dist/
+salida/

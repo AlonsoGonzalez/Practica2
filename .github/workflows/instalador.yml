@@ -1,0 +1,32 @@
+name: Instalador de Windows
+
+# Se ejecuta al publicar una etiqueta (git tag v1.0.0 && git push --tags) o a mano.
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+jobs:
+  windows:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -r requirements-build.txt
+      - run: python -m pytest -q
+      - name: Verificar llave publica
+        shell: bash
+        run: test -f pos/clave_publica.pem || (echo "Falta pos/clave_publica.pem" && exit 1)
+      - run: pyinstaller --noconfirm instalador/pos.spec
+      - name: Compilar instalador
+        shell: bash
+        run: |
+          choco install innosetup -y --no-progress
+          VERSION="${GITHUB_REF_NAME#v}"; [ "$GITHUB_REF_TYPE" = tag ] || VERSION="0.0.0-dev"
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" "/DVersion=$VERSION" instalador/pos.iss
+      - uses: actions/upload-artifact@v4
+        with:
+          name: PuntoDeVenta-Setup
+          path: salida/*.exe
