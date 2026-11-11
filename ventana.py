@@ -5,6 +5,7 @@ import sys
 import tkinter as tk
 from tkinter import messagebox
 
+import firewall
 from pos import paths
 
 ROJO, VERDE = "#d8001d", "#0a7a2f"
@@ -72,6 +73,13 @@ def correr(srv, abrir_navegador, carpeta_respaldos, guardar_lan):
             lan.set(srv.lan)
             messagebox.showerror("Punto de Venta", f"No se pudo cambiar el acceso desde tablet:\n{e}")
         refrescar_lan()
+        if srv.lan and firewall.es_windows() and not firewall.existe():
+            if messagebox.askyesno("Permitir la tablet en el Firewall",
+                                   "Para que la tablet o el celular puedan conectarse, Windows debe permitirlo en el Firewall "
+                                   "(solo en redes privadas, como la de tu tienda).\n\nWindows te pedirá permiso de administrador.\n\n¿Permitirlo ahora?"):
+                if not firewall.agregar():
+                    messagebox.showwarning("Firewall", "No se pudo crear la regla. Si Windows pregunta por el Firewall, "
+                                                       "marca «Redes privadas» y permite el acceso.")
 
     estado.pack(pady=(14, 2), anchor="w")
     tk.Checkbutton(marco, text="Permitir usar el sistema desde una tablet o celular", variable=lan,

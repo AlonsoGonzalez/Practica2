@@ -71,6 +71,8 @@ vuelve a abrir el navegador (nunca queda una segunda copia). Actualizar = ejecut
 
 - Los datos viven en `%APPDATA%\PuntoVentaAbarrotes\` (base de datos, `respaldos\`, `logs\pos.log`, `config.json`),
   fuera de la carpeta del programa: actualizar o desinstalar **no** los borra.
+- **Ticket impreso**: botón «Imprimir el último ticket» o casilla «Imprimir ticket al cobrar» (papel térmico de 80 mm).
+- **Tema claro/oscuro** con el botón de la luna.
 - **Respaldos** (`respaldos\`): se hacen solos al abrir el sistema, cada 4 horas, **al cerrar cada turno** y al cerrar el
   sistema, y a mano con «Respaldar ahora». Se conserva todo lo de las últimas 24 h y el último de cada día del último mes.
   El dueño los ve y **restaura** desde la pestaña *Respaldos* (antes de restaurar se guarda una copia de lo actual).

@@ -5,9 +5,36 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Punto de Venta - Abarrotes</title>
 <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23d8001d'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle'%3E%F0%9F%9B%92%3C/text%3E%3C/svg%3E">
+<script>try{document.documentElement.dataset.tema=localStorage.getItem("pos_tema")||(matchMedia("(prefers-color-scheme: dark)").matches?"oscuro":"claro")}catch(e){}</script>
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body class="sin-sesion">
+<svg width="0" height="0" style="position:absolute" aria-hidden="true" focusable="false">
+  <defs>
+    <symbol id="i-venta" viewBox="0 0 24 24"><circle cx="9" cy="21" r="1"/><circle cx="20" cy="21" r="1"/><path d="M1 1h4l2.7 13.4a2 2 0 0 0 2 1.6h9.7a2 2 0 0 0 2-1.6L23 6H6"/></symbol>
+    <symbol id="i-inventario" viewBox="0 0 24 24"><path d="M21 16V8a2 2 0 0 0-1-1.7l-7-4a2 2 0 0 0-2 0l-7 4A2 2 0 0 0 3 8v8a2 2 0 0 0 1 1.7l7 4a2 2 0 0 0 2 0l7-4a2 2 0 0 0 1-1.7z"/><path d="M3.3 7 12 12l8.7-5"/><path d="M12 22V12"/></symbol>
+    <symbol id="i-caja" viewBox="0 0 24 24"><rect x="2" y="6" width="20" height="14" rx="2"/><path d="M2 10h20"/><path d="M6 15h4"/></symbol>
+    <symbol id="i-fiado" viewBox="0 0 24 24"><path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M23 21v-2a4 4 0 0 0-3-3.9"/><path d="M16 3.1a4 4 0 0 1 0 7.8"/></symbol>
+    <symbol id="i-pedido" viewBox="0 0 24 24"><path d="M1 3h15v13H1z"/><path d="M16 8h4l3 3v5h-7z"/><circle cx="5.5" cy="18.5" r="2.5"/><circle cx="18.5" cy="18.5" r="2.5"/></symbol>
+    <symbol id="i-corte" viewBox="0 0 24 24"><path d="M12 20V10"/><path d="M18 20V4"/><path d="M6 20v-4"/></symbol>
+    <symbol id="i-usuarios" viewBox="0 0 24 24"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/><circle cx="12" cy="7" r="4"/></symbol>
+    <symbol id="i-respaldos" viewBox="0 0 24 24"><ellipse cx="12" cy="5" rx="9" ry="3"/><path d="M3 5v14c0 1.7 4 3 9 3s9-1.3 9-3V5"/><path d="M3 12c0 1.7 4 3 9 3s9-1.3 9-3"/></symbol>
+    <symbol id="i-basura" viewBox="0 0 24 24"><path d="M3 6h18"/><path d="M19 6l-1 14a2 2 0 0 1-2 2H8a2 2 0 0 1-2-2L5 6"/><path d="M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"/></symbol>
+    <symbol id="i-imprimir" viewBox="0 0 24 24"><path d="M6 9V2h12v7"/><path d="M6 18H4a2 2 0 0 1-2-2v-5a2 2 0 0 1 2-2h16a2 2 0 0 1 2 2v5a2 2 0 0 1-2 2h-2"/><rect x="6" y="14" width="12" height="8"/></symbol>
+    <symbol id="i-luna" viewBox="0 0 24 24"><path d="M21 12.8A9 9 0 1 1 11.2 3a7 7 0 0 0 9.8 9.8z"/></symbol>
+    <symbol id="i-sol" viewBox="0 0 24 24"><circle cx="12" cy="12" r="4"/><path d="M12 2v2M12 20v2M4.9 4.9l1.4 1.4M17.7 17.7l1.4 1.4M2 12h2M20 12h2M4.9 19.1l1.4-1.4M17.7 6.3l1.4-1.4"/></symbol>
+    <symbol id="i-llave" viewBox="0 0 24 24"><circle cx="7.5" cy="15.5" r="4.5"/><path d="m10.7 12.3 9.8-9.8"/><path d="m17 6 3 3"/><path d="m14 9 2 2"/></symbol>
+    <symbol id="i-salir" viewBox="0 0 24 24"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="m16 17 5-5-5-5"/><path d="M21 12H9"/></symbol>
+    <symbol id="i-bebida" viewBox="0 0 24 24"><path d="M5 2h14l-1.5 18a2 2 0 0 1-2 2h-7a2 2 0 0 1-2-2z"/><path d="M6 8h12"/></symbol>
+    <symbol id="i-bolsa" viewBox="0 0 24 24"><path d="M6 2 3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><path d="M3 6h18"/><path d="M16 10a4 4 0 0 1-8 0"/></symbol>
+    <symbol id="i-pan" viewBox="0 0 24 24"><path d="M4 10a4 4 0 0 1 4-4h8a4 4 0 0 1 4 4v9a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1z"/><path d="M8 12v4M12 12v4M16 12v4"/></symbol>
+    <symbol id="i-leche" viewBox="0 0 24 24"><path d="M8 2h8l1 4v14a2 2 0 0 1-2 2H9a2 2 0 0 1-2-2V6z"/><path d="M7 10h10"/></symbol>
+    <symbol id="i-paquete" viewBox="0 0 24 24"><path d="m7.5 4.3 9 5.2"/><path d="M21 8v8a2 2 0 0 1-1 1.7l-7 4a2 2 0 0 1-2 0l-7-4A2 2 0 0 1 3 16V8a2 2 0 0 1 1-1.7l7-4a2 2 0 0 1 2 0l7 4A2 2 0 0 1 21 8z"/></symbol>
+    <symbol id="i-vacio" viewBox="0 0 64 64"><rect x="10" y="22" width="44" height="30" rx="4"/><path d="M10 30h44"/><path d="M24 22l4-10h8l4 10"/><path d="M26 40h12"/></symbol>
+  </defs>
+</svg>
+<div id="toasts" role="status" aria-live="polite"></div>
+<div id="ticket-impreso" aria-hidden="true"></div>
 
 <div id="auth-overlay" class="overlay opaco" hidden>
   <form id="form-auth">
@@ -47,22 +74,23 @@
 </dialog>
 
 <header>
-  <h1><span class="logo">🛒</span> Punto de Venta</h1>
+  <h1><span class="logo"><svg class="ico"><use href="#i-venta"/></svg></span> <span class="marca">Punto de Venta</span></h1>
   <nav aria-label="Secciones">
-    <button data-tab="venta" class="active">Venta</button>
-    <button data-tab="inventario" data-solo-dueno>Inventario</button>
-    <button data-tab="caja">Caja</button>
-    <button data-tab="clientes">Fiado</button>
-    <button data-tab="pedido" data-solo-dueno>Pedido</button>
-    <button data-tab="corte" data-solo-dueno>Corte de caja</button>
-    <button data-tab="usuarios" data-solo-dueno>Usuarios</button>
-    <button data-tab="respaldos" data-solo-dueno>Respaldos</button>
+    <button data-tab="venta" class="active"><svg class="ico"><use href="#i-venta"/></svg><span>Venta</span></button>
+    <button data-tab="inventario" data-solo-dueno><svg class="ico"><use href="#i-inventario"/></svg><span>Inventario</span></button>
+    <button data-tab="caja"><svg class="ico"><use href="#i-caja"/></svg><span>Caja</span></button>
+    <button data-tab="clientes"><svg class="ico"><use href="#i-fiado"/></svg><span>Fiado</span></button>
+    <button data-tab="pedido" data-solo-dueno><svg class="ico"><use href="#i-pedido"/></svg><span>Pedido</span></button>
+    <button data-tab="corte" data-solo-dueno><svg class="ico"><use href="#i-corte"/></svg><span>Corte de caja</span></button>
+    <button data-tab="usuarios" data-solo-dueno><svg class="ico"><use href="#i-usuarios"/></svg><span>Usuarios</span></button>
+    <button data-tab="respaldos" data-solo-dueno><svg class="ico"><use href="#i-respaldos"/></svg><span>Respaldos</span></button>
   </nav>
   <div class="sesion">
     <small id="lic-badge"></small>
     <span id="usuario-actual"></span>
-    <button id="btn-password" class="mini">Contraseña</button>
-    <button id="btn-salir" class="mini">Salir</button>
+    <button id="tema" class="mini" aria-label="Cambiar entre tema claro y oscuro" title="Tema claro / oscuro"><svg class="ico"><use href="#i-luna"/></svg></button>
+    <button id="btn-password" class="mini" aria-label="Cambiar mi contraseña" title="Cambiar mi contraseña"><svg class="ico"><use href="#i-llave"/></svg><span>Contraseña</span></button>
+    <button id="btn-salir" class="mini" aria-label="Salir" title="Salir"><svg class="ico"><use href="#i-salir"/></svg><span>Salir</span></button>
   </div>
 </header>
 
@@ -106,6 +134,8 @@
       <div class="cambio">Cambio: <span id="cambio">$0.00</span></div>
       <button id="cobrar" class="primario grande">Cobrar</button>
       <button id="vaciar">Vaciar ticket</button>
+      <button id="imprimir-ticket" hidden><svg class="ico"><use href="#i-imprimir"/></svg> Imprimir el último ticket</button>
+      <label class="campo check"><input type="checkbox" id="auto-imprimir"><span>Imprimir ticket al cobrar</span></label>
       <div id="msg-venta" class="msg" role="status"></div>
     </aside>
   </div>

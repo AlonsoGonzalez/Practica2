@@ -1,6 +1,6 @@
 # Casos de prueba
 
-Generado con `python tools/casos_de_prueba.py`. **103 pruebas, 154 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
+Generado con `python tools/casos_de_prueba.py`. **106 pruebas, 157 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
 
 ## Ventas, inventario, fiado, envases y sugerencia de pedido (flujo base)
 `tests/test_pos.py` · 10 pruebas · 10 ejecuciones
@@ -119,7 +119,7 @@ Generado con `python tools/casos_de_prueba.py`. **103 pruebas, 154 ejecuciones**
 - Restaurar no borra el respaldo elegido aunque sea muy viejo
 
 ## Arranque de la app instalada: instancia única, servidor, configuración y errores
-`tests/test_arranque.py` · 10 pruebas · 10 ejecuciones
+`tests/test_arranque.py` · 13 pruebas · 13 ejecuciones
 
 - Ping es publico aun exigiendo licencia y sesion
 - Servidor arranca responde y se detiene
@@ -131,6 +131,9 @@ Generado con `python tools/casos_de_prueba.py`. **103 pruebas, 154 ejecuciones**
 - Lo mismo que hace el doble clic: arranca, atiende, un segundo lanzamiento no duplica y se apaga.
 - Lo ejecuta el instalador: una instalacion nueva nunca deja el sistema visible en la red.
 - Antes el respaldo era solo uno al abrir; el del dia no tenia ninguna venta. Ahora: abrir + cada X horas + cerrar.
+- Regla de firewall solo para redes privadas y de dominio
+- Navegador cae a edge si windows no tiene uno predeterminado
+- En Windows un puerto cerrado puede conectarse consigo mismo y devolver la propia peticion como respuesta.
 
 ## Recorrido completo en navegador real
 `tests/test_e2e.py` · 1 pruebas · 1 ejecuciones
@@ -146,10 +149,12 @@ Generado con `python tools/casos_de_prueba.py`. **103 pruebas, 154 ejecuciones**
 - OK 5 cajero: clave mala rechazada, solo ve Venta/Caja/Fiado y cae en Caja por no tener turno
 - OK 6 cajero: sin turno ve el aviso y no puede cobrar; con turno cobra; cierra con faltante y se lo dice
 - OK 7 corte muestra el faltante de Luis; al desactivarlo su tablet vuelve al login
+- OK 7b con turno abierto no hay aviso de turno cerrado; cliente solo con fiado
 - OK 8 las 8 pestañas: todos los campos tienen etiqueta visible y todos los botones miden al menos 44 px
 - OK 9 celular: sin scroll horizontal en 8 pestañas, tablas como tarjetas, barra de cobro fija y Cobrar a un toque
 - OK 10 fiado: estado vacío con mensaje, dialogo propio para abonar y abono registrado
 - OK 11 fiado sin límite permite la venta
 - OK 12 respaldos: se ven los automáticos (incluido el del cierre de turno), respaldar ahora y confirmación antes de restaurar
+- OK 12b avisos visibles, tema oscuro y claro, ticket con total y cambio, y al imprimir solo se ve el ticket
 - OK 13 salir: solo se ve el inicio de sesión, sin menú ni datos detrás
 - OK 8 sin errores de JavaScript en ningun navegador

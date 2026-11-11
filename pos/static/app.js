@@ -15,7 +15,30 @@ const api = async (url, opts = {}) => {
   if (!r.ok) throw new Error(data.error || "Ocurrió un error. Inténtalo de nuevo.");
   return data;
 };
-const say = (el, text, ok) => { el.textContent = text; el.className = "msg " + (ok ? "ok" : "error"); };
+// la altura real del encabezado (una o dos filas) se usa para pegar encabezados de tablas y avisos debajo de el
+new ResizeObserver(() => document.documentElement.style.setProperty("--alto-header", $("header").offsetHeight + "px")).observe($("header"));
+const ico = n => `<svg class="ico"><use href="#i-${n}"/></svg>`;
+function toast(texto, ok, html = false) {
+  const t = document.createElement("div"), msg = document.createElement("span"), x = document.createElement("button");
+  t.className = "toast " + (ok ? "ok" : "error");
+  html ? msg.innerHTML = texto : msg.textContent = texto;
+  x.textContent = "✕"; x.setAttribute("aria-label", "Cerrar aviso"); x.onclick = () => t.remove();
+  t.append(msg, x); $("#toasts").append(t);
+  setTimeout(() => t.remove(), ok ? 4000 : 7000);
+}
+// El texto queda en el elemento (lectores de pantalla y pruebas); lo que ve la persona es el aviso (toast).
+const say = (el, text, ok) => {
+  el.textContent = text; el.className = "msg " + (ok ? "ok" : "error");
+  if (text && !el.closest("#form-auth, #form-licencia")) toast(text, ok);
+};
+// ---- Tema claro / oscuro ----
+function aplicarTema(t) {
+  document.documentElement.dataset.tema = t;
+  try { localStorage.setItem("pos_tema", t); } catch (e) {}
+  $("#tema use").setAttribute("href", t === "oscuro" ? "#i-sol" : "#i-luna");
+}
+$("#tema").onclick = () => aplicarTema(document.documentElement.dataset.tema === "oscuro" ? "claro" : "oscuro");
+$("#tema use").setAttribute("href", document.documentElement.dataset.tema === "oscuro" ? "#i-sol" : "#i-luna");
 
 // ---- Ventanas de dialogo propias (en lugar de prompt/confirm del navegador: se ven bien y se usan con el dedo) ----
 function dialogo({titulo, texto = "", campos = [], boton = "Aceptar", peligro = false}) {
@@ -48,10 +71,13 @@ function prepararTablas() {
     const tb = t.tBodies[0]; if (!tb) return;
     const heads = $$("thead th", t).map(th => th.textContent.trim());
     const filas = [...tb.rows].filter(r => !r.classList.contains("vacio"));
-    filas.forEach(tr => [...tr.cells].forEach((td, i) => { if (td.dataset.label !== (heads[i] ?? "")) td.dataset.label = heads[i] ?? ""; }));
+    filas.forEach(tr => [...tr.cells].forEach((td, i) => {
+      if (td.dataset.label !== (heads[i] ?? "")) td.dataset.label = heads[i] ?? "";
+      if (/^[\$\d.,\s\/%—-]+$/.test(td.textContent.trim()) && td.textContent.trim()) td.classList.add("num");   // cifras y precios no se parten
+    }));
     const vacio = tb.querySelector("tr.vacio");
     if (!filas.length && !vacio)
-      tb.insertAdjacentHTML("beforeend", `<tr class="vacio"><td colspan="${heads.length || 1}" data-label="">${esc(t.dataset.vacio || "Sin datos.")}</td></tr>`);
+      tb.insertAdjacentHTML("beforeend", `<tr class="vacio"><td colspan="${heads.length || 1}" data-label=""><svg class="ilus"><use href="#i-vacio"/></svg>${esc(t.dataset.vacio || "Sin datos.")}</td></tr>`);
     else if (filas.length && vacio) vacio.remove();
   });
 }
@@ -94,13 +120,21 @@ function mostrarGuia() {
 $("#ocultar-pasos").onclick = () => { localStorage.setItem("pos_guia_oculta", "1"); mostrarGuia(); };
 
 // ---- Venta ----
+function iconoCategoria(c) {
+  c = (c || "").toLowerCase();
+  if (/refresc|agua|jugo|bebida/.test(c)) return "bebida";
+  if (/botana|galleta|dulce/.test(c)) return "bolsa";
+  if (/l[aá]cteo|leche/.test(c)) return "leche";
+  if (/panader|pan\b/.test(c)) return "pan";
+  return "paquete";
+}
 async function cargarCatalogo() {
   productos = await api("/api/productos?q=" + encodeURIComponent($("#buscar").value));
   $("#catalogo").innerHTML = productos.map(p => {
     const nivel = p.stock <= 0 ? "cero" : p.stock <= p.stock_minimo ? "bajo" : "ok";
     return `<button class="prod ${p.stock <= 0 ? "agotado" : ""}" data-id="${p.id}">
-       <small>${esc(p.categoria)}</small><span>${esc(p.nombre)}</span><b>${money(p.precio)}</b>
-       <small class="st ${nivel}">${p.stock <= 0 ? "Agotado" : "Quedan " + p.stock}</small></button>`;
+       <span class="cat">${ico(iconoCategoria(p.categoria))}${esc(p.categoria)}</span><span class="nom">${esc(p.nombre)}</span><b>${money(p.precio)}</b>
+       <span class="st ${nivel}">${p.stock <= 0 ? "Agotado" : "Quedan " + p.stock}</span></button>`;
   }).join("") || `<p class="nota">No se encontraron productos.</p>`;
   $$(".prod").forEach(b => b.onclick = () => agregar(+b.dataset.id));
 }
@@ -164,6 +198,24 @@ $("#metodo").onchange = async () => {
       : `<option value="">Primero agrega un cliente en Fiado</option>`;
   }
 };
+let ultimaVenta = null;
+async function imprimirTicket(id) {
+  try {
+    const [v, lic] = await Promise.all([api(`/api/ventas/${id}`), fetch("/api/licencia").then(r => r.json()).catch(() => ({}))]);
+    const lineas = v.items.map(i => `<tr><td>${i.cantidad} x ${esc(i.nombre)}</td><td>${money(i.precio * i.cantidad)}</td></tr>`).join("");
+    $("#ticket-impreso").innerHTML =
+      `<h1>${esc(lic.tienda || "Punto de Venta")}</h1><div class="c">Ticket #${v.id}<br>${esc(v.fecha)}</div><div class="linea"></div>` +
+      `<table>${lineas}${v.casco ? `<tr><td>Casco (depósito de envases)</td><td>${money(v.casco)}</td></tr>` : ""}</table><div class="linea"></div>` +
+      `<table class="tot"><tr><td>TOTAL</td><td>${money(v.total)}</td></tr></table>` +
+      (v.metodo === "fiado" ? `<div class="c">Venta a fiado</div>`
+        : `<table><tr><td>Recibido</td><td>${money(v.recibido)}</td></tr><tr><td>Cambio</td><td>${money(v.cambio)}</td></tr></table>`) +
+      `<div class="linea"></div><div class="c">¡Gracias por su compra!</div>`;
+    window.print();
+  } catch (e) { say($("#msg-venta"), "No se pudo preparar el ticket: " + e.message, false); }
+}
+$("#imprimir-ticket").onclick = () => ultimaVenta && imprimirTicket(ultimaVenta);
+$("#auto-imprimir").checked = localStorage.getItem("pos_auto_imprimir") === "1";
+$("#auto-imprimir").onchange = e => localStorage.setItem("pos_auto_imprimir", e.target.checked ? "1" : "0");
 $("#vaciar").onclick = () => { carrito = {}; pintarCarrito(); };
 $("#abrir-ticket").onclick = () => document.body.classList.add("ticket-abierto");
 $("#cerrar-ticket").onclick = () => document.body.classList.remove("ticket-abierto");
@@ -176,6 +228,8 @@ $("#cobrar").onclick = async () => {
   try {
     const v = await api("/api/ventas", {body});
     say($("#msg-venta"), `Venta #${v.id} registrada. ` + (body.metodo === "fiado" ? "Cargada a fiado." : `Cambio: ${money(v.cambio)}`), true);
+    ultimaVenta = v.id; $("#imprimir-ticket").hidden = false;
+    if ($("#auto-imprimir").checked) imprimirTicket(v.id);
     carrito = {}; $("#recibido").value = ""; document.body.classList.remove("ticket-abierto");
     pintarCarrito(); cargarCatalogo();
   } catch (e) { say($("#msg-venta"), e.message, false); }
@@ -188,13 +242,13 @@ async function cargarInventario() {
     `<tr><td>${esc(p.codigo)}</td><td>${esc(p.nombre)}</td><td>${esc(p.categoria)}</td>
      <td>${money(p.precio)}</td><td>${money(p.costo)}</td>
      <td class="${p.stock <= p.stock_minimo ? "bajo" : ""}">${p.stock}</td>
-     <td>${p.retornable ? `${p.vacios} / ${p.en_calle}
+     <td>${p.retornable ? `<div class="acciones">${p.vacios} / ${p.en_calle}
          <button data-dev-env="${p.id}" data-nombre="${esc(p.nombre)}">Devolución</button>
-         <button data-canje="${p.id}" data-nombre="${esc(p.nombre)}">Canje</button>` : "—"}</td>
-     <td><input type="number" inputmode="numeric" step="1" style="width:90px" placeholder="±" data-aj="${p.id}"
+         <button data-canje="${p.id}" data-nombre="${esc(p.nombre)}">Canje</button></div>` : "—"}</td>
+     <td><div class="acciones"><input type="number" inputmode="numeric" step="1" style="width:90px" placeholder="±" data-aj="${p.id}"
            aria-label="Ajustar existencias de ${esc(p.nombre)} (positivo suma, negativo resta)">
-         <button data-ok="${p.id}" aria-label="Aplicar ajuste a ${esc(p.nombre)}">Aplicar</button></td>
-     <td><button class="peligro" data-del="${p.id}" data-nombre="${esc(p.nombre)}" aria-label="Eliminar ${esc(p.nombre)}">🗑 Eliminar</button></td></tr>`).join("");
+         <button data-ok="${p.id}" aria-label="Aplicar ajuste a ${esc(p.nombre)}">Aplicar</button></div></td>
+     <td><button class="peligro" data-del="${p.id}" data-nombre="${esc(p.nombre)}" aria-label="Eliminar ${esc(p.nombre)}">${ico("basura")} Eliminar</button></td></tr>`).join("");
   $$("[data-ok]").forEach(b => b.onclick = async () => {
     const cant = $(`[data-aj="${b.dataset.ok}"]`).value;
     try { await api(`/api/productos/${b.dataset.ok}/ajuste`, {body: {cantidad: cant}}); cargarInventario(); }
@@ -292,7 +346,10 @@ $("#p-calc").onclick = cargarPedido;
 
 // ---- Licencia ----
 async function mostrarLicencia(info) {
-  info = info.instalacion ? info : await fetch("/api/licencia").then(r => r.json());
+  // Se confirma con el servidor antes de mostrarla: una respuesta 402 atrasada no debe reabrirla despues de activar.
+  const actual = await fetch("/api/licencia").then(r => r.json()).catch(() => info);
+  if (actual.activa) return;
+  info = actual.instalacion ? actual : info;
   $("#lic-mensaje").textContent = info.mensaje || info.error || "";
   $("#lic-instalacion").textContent = info.instalacion;
   $("#licencia-overlay").hidden = false;
@@ -367,8 +424,9 @@ $("#form-cerrar").onsubmit = async e => {
   try {
     const d = await api("/api/turno/cerrar", {body: Object.fromEntries(new FormData(e.target))});
     e.target.reset(); cargarCaja();
-    $("#msg-caja").className = "msg"; $("#msg-caja").innerHTML =
-      `Turno cerrado. Esperado ${money(d.esperado)}, contado ${money(d.contado)}: ${difTexto(d.diferencia)}`;
+    const resumenCierre = `Turno cerrado. Esperado ${money(d.esperado)}, contado ${money(d.contado)}: ${difTexto(d.diferencia)}`;
+    $("#msg-caja").className = "msg"; $("#msg-caja").innerHTML = resumenCierre;
+    toast(resumenCierre, d.diferencia === 0, true);
   } catch (err) { say($("#msg-caja"), err.message, false); }
 };
 

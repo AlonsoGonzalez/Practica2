@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const [puerto, llaves, python] = process.argv.slice(2);
 const URL = `http://localhost:${puerto}`;
-const tabs = p => p.locator('nav button:visible').allTextContents();
+const tabs = p => p.locator('nav button:visible').allTextContents().then(a => a.map(t => t.trim()));
 
 (async () => {
   const b = await chromium.launch(); const errores = [];
@@ -59,6 +59,7 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   await pc.fill('#form-usuario [name=password]', 'caja123'); await pc.click('#form-usuario button');
   await pc.waitForFunction(() => document.querySelectorAll('#t-usuarios tbody tr').length === 2);
   const tab = await nueva(); await tab.goto(URL); await tab.waitForSelector('#auth-overlay:not([hidden])');
+  assert(!(await tab.isVisible('#lbl-auth-nombre')), 'al iniciar sesion no se pide el nombre (solo al crear la cuenta)');
   await tab.fill('#form-auth [name=usuario]', 'luis'); await tab.fill('#form-auth [name=password]', 'mala'); await tab.click('#auth-boton');
   await tab.waitForFunction(() => document.querySelector('#msg-auth').textContent.length > 0);
   await tab.fill('#form-auth [name=password]', 'caja123'); await tab.click('#auth-boton');
@@ -91,6 +92,12 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   await tab.click('[data-tab=venta]'); await tab.fill('#buscar', 'Coca'); await tab.waitForSelector('#auth-overlay:not([hidden])');
   console.log('OK 7 corte muestra el faltante de Luis; al desactivarlo su tablet vuelve al login');
 
+  // 7b. Lo que debe estar oculto lo esta (un estilo display:flex podia anular el atributo hidden)
+  await pc.click('[data-tab=venta]'); await pc.waitForTimeout(300);
+  assert(!(await pc.isVisible('#banner-turno')), 'con turno abierto no debe verse el aviso de turno cerrado');
+  assert(!(await pc.isVisible('#lbl-cliente')), 'el selector de cliente solo aparece al elegir fiado');
+  console.log('OK 7b con turno abierto no hay aviso de turno cerrado; cliente solo con fiado');
+
   // 8. Etiquetas visibles y botones de al menos 44 px en TODAS las pantallas (escritorio)
   const revisar = () => pc.evaluate(() => {
     const out = [];
@@ -118,6 +125,7 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   await m.goto(URL); await m.waitForSelector('#auth-overlay:not([hidden])');
   await m.fill('#form-auth [name=usuario]', 'mary'); await m.fill('#form-auth [name=password]', 'secreto1'); await m.click('#auth-boton');
   await m.waitForSelector('.prod');
+  assert(!(await m.isVisible('#imprimir-ticket')), 'no hay ticket que imprimir antes de la primera venta');
   const ancho = () => m.evaluate(() => ({ doc: document.documentElement.scrollWidth, vista: window.innerWidth }));
   for (const t of pestanas) {
     await m.click(`[data-tab=${t}]`); await m.waitForTimeout(400);
@@ -135,6 +143,7 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   const cerrado = await m.locator('#cobrar').boundingBox();
   assert(!cerrado || cerrado.y >= 812, 'el ticket completo empieza cerrado (fuera de la pantalla, la barra es lo unico que se ve)');
   await m.click('#abrir-ticket'); await m.waitForTimeout(400);
+  assert(!(await m.isVisible('#lbl-cliente')), 'en efectivo no se muestra el selector de cliente');
   const cobrar = await m.locator('#cobrar').boundingBox();
   assert(cobrar && cobrar.y >= 0 && cobrar.y + cobrar.height <= 813, 'Cobrar debe quedar visible sin hacer scroll');
   await m.click('#cerrar-ticket');
@@ -144,6 +153,7 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   // 10. Fiado con diálogos propios (sin cuadros del navegador) y estado vacío
   await pc.click('[data-tab=clientes]'); await pc.waitForTimeout(300);
   assert((await pc.textContent('#t-clientes tbody')).includes('Todavía no hay clientes a fiado'), 'estado vacio con mensaje');
+  assert(await pc.locator('#t-clientes tbody tr.vacio svg.ilus').count() === 1, 'el estado vacio lleva ilustracion');
   await pc.fill('#form-cliente [name=nombre]', 'Doña Ana'); await pc.click('#form-cliente button'); await pc.waitForTimeout(400);
   await pc.click('[data-tab=venta]'); await pc.fill('#buscar', 'Sprite'); await pc.waitForTimeout(400); await pc.click('.prod');
   await pc.selectOption('#metodo', 'fiado'); await pc.waitForTimeout(400); await pc.click('#cobrar');
@@ -178,6 +188,29 @@ const tabs = p => p.locator('nav button:visible').allTextContents();
   assert((await pc.textContent('#dlg-texto')).includes('reemplazar TODOS los datos'), 'la advertencia debe ser clara');
   await pc.click('#dlg-cancelar');
   console.log('OK 12 respaldos: se ven los automáticos (incluido el del cierre de turno), respaldar ahora y confirmación antes de restaurar');
+
+  // 12b. Avisos (toast), tema oscuro y ticket imprimible
+  await pc.click('#respaldar-ahora');
+  await pc.waitForSelector('#toasts .toast.ok:has-text("Respaldo creado")');   // el aviso es visible, no solo el texto oculto
+  await pc.click('#tema'); await pc.waitForTimeout(200);
+  assert.strictEqual(await pc.evaluate(() => document.documentElement.dataset.tema), 'oscuro');
+  const oscuro = await pc.evaluate(() => { const [r, g, b] = getComputedStyle(document.body).backgroundColor.match(/\d+/g).map(Number); return (r + g + b) / 3; });
+  assert(oscuro < 60, 'el fondo del tema oscuro debe ser oscuro: ' + oscuro);
+  await pc.click('#tema'); await pc.waitForTimeout(100);
+  assert.strictEqual(await pc.evaluate(() => document.documentElement.dataset.tema), 'claro');
+  await pc.evaluate(() => { window.__impreso = 0; window.print = () => { window.__impreso++; }; });
+  await pc.click('[data-tab=venta]'); await pc.fill('#buscar', 'Sprite'); await pc.waitForTimeout(400); await pc.click('.prod');
+  await pc.selectOption('#metodo', 'efectivo');
+  await pc.fill('#recibido', '50'); await pc.click('#cobrar');
+  await pc.waitForFunction(() => document.querySelector('#msg-venta').textContent.includes('registrada'));
+  await pc.waitForSelector('#imprimir-ticket:not([hidden])');
+  await pc.click('#imprimir-ticket'); await pc.waitForFunction(() => window.__impreso === 1);
+  const ticket = await pc.textContent('#ticket-impreso');
+  assert(ticket.includes('Sprite') && ticket.includes('TOTAL') && ticket.includes('Cambio') && ticket.includes('Gracias'), 'contenido del ticket: ' + ticket);
+  await pc.emulateMedia({ media: 'print' });
+  assert(await pc.isVisible('#ticket-impreso') && !(await pc.isVisible('header')) && !(await pc.isVisible('main')), 'al imprimir solo debe verse el ticket');
+  await pc.emulateMedia({ media: 'screen' });
+  console.log('OK 12b avisos visibles, tema oscuro y claro, ticket con total y cambio, y al imprimir solo se ve el ticket');
 
   // 13. Salir: no debe verse nada de la app detrás del inicio de sesión
   await pc.click('#btn-salir'); await pc.waitForSelector('#auth-overlay:not([hidden])');

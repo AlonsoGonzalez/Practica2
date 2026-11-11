@@ -106,6 +106,14 @@ jobs:
           if (-not (Test-Path "$datos\pos.db")) { throw "Reinstalar borro los datos de la tienda" }
           Write-Host "OK: reinstalar apaga la tablet y conserva los datos"
 
+          # regla del Firewall para redes privadas (el runner es administrador): se crea y cubre el perfil Privado
+          $p = Start-Process -FilePath "$dir\PuntoDeVenta.exe" -ArgumentList "--permitir-firewall" -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "No se pudo crear la regla del Firewall (codigo $($p.ExitCode))" }
+          $regla = netsh advfirewall firewall show rule name="Punto de Venta (acceso desde tablet)" | Out-String
+          if ($regla -notmatch "Private") { throw "La regla del Firewall no cubre el perfil Privado:`n$regla" }
+          if ($regla -match "Public" -and $regla -notmatch "Domain,Private|Private,Domain") { throw "La regla cubre redes publicas:`n$regla" }
+          Write-Host "OK: la regla del Firewall cubre redes privadas"
+
           # el desinstalador debe cerrar el programa si esta abierto
           $env:POS_NO_BROWSER = "1"
           $app = Start-Process -FilePath "$dir\PuntoDeVenta.exe" -ArgumentList "--sin-ventana" -PassThru

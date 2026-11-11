@@ -16,9 +16,18 @@ RAIZ = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
 def puerto_cualquiera():
-    with socket.socket() as s:
-        s.bind(("127.0.0.1", 0))
-        return s.getsockname()[1]
+    """Puerto libre FUERA del rango temporal del sistema (32768+ en Linux, 49152+ en Windows): ahi un puerto cerrado
+    puede "conectarse consigo mismo" y confundir a quien lo revisa."""
+    import random
+    for _ in range(200):
+        p = random.randrange(20000, 30000)
+        with socket.socket() as s:
+            try:
+                s.bind(("127.0.0.1", p))
+                return p
+            except OSError:
+                continue
+    raise RuntimeError("no hay puertos libres")
 
 
 def escucha(puerto):
@@ -184,3 +193,42 @@ def test_respaldos_al_abrir_periodicos_y_al_cerrar(tmp_path):
         if p.poll() is None:
             p.kill()
     assert "al-cerrar" in {r["motivo"] for r in listar(carpeta)}
+
+
+def test_regla_de_firewall_solo_para_redes_privadas_y_de_dominio():
+    import firewall
+    args = firewall.argumentos_agregar(r"C:\Programas\PuntoDeVenta\PuntoDeVenta.exe")
+    assert "profile=private,domain" in args and "action=allow" in args and "dir=in" in args
+    assert not any("public" in a.lower() for a in args)          # nunca en redes publicas
+    assert args[-1] == "protocol=TCP" and any(a.startswith("program=") for a in args)
+    assert firewall.argumentos_quitar()[-1] == f"name={firewall.NOMBRE}"
+    if not firewall.es_windows():                                  # fuera de Windows no hace nada ni falla
+        assert firewall.existe() is False and firewall.agregar() is False
+
+
+def test_navegador_cae_a_edge_si_windows_no_tiene_uno_predeterminado(monkeypatch):
+    import navegador
+    abiertos, lanzados = [], []
+    monkeypatch.setattr(navegador.webbrowser, "open", lambda u: abiertos.append(u))
+    monkeypatch.setattr(navegador.subprocess, "Popen", lambda cmd, **kw: lanzados.append(cmd))
+    monkeypatch.setattr(navegador, "hay_navegador_predeterminado", lambda: True)
+    assert navegador.abrir("http://localhost:5000") == "predeterminado" and abiertos == ["http://localhost:5000"] and not lanzados
+    monkeypatch.setattr(navegador, "hay_navegador_predeterminado", lambda: False)
+    assert navegador.abrir("http://localhost:5000") == "edge"
+    assert lanzados and "msedge" in lanzados[0] and lanzados[0][-1] == "http://localhost:5000"
+    # si Edge tampoco se puede lanzar, lo intenta con el predeterminado en vez de fallar
+    def falla(*a, **k): raise OSError("no hay edge")
+    monkeypatch.setattr(navegador.subprocess, "Popen", falla)
+    abiertos.clear()
+    assert navegador.abrir("http://localhost:5001") == "predeterminado" and abiertos == ["http://localhost:5001"]
+
+
+def test_una_autoconexion_tcp_no_se_toma_por_nuestra_app(monkeypatch):
+    """En Windows un puerto cerrado puede conectarse consigo mismo y devolver la propia peticion como respuesta."""
+    import http.client
+    import servidor
+    def autoconexion(*a, **k):
+        raise http.client.BadStatusLine("GET /api/ping HTTP/1.1")
+    monkeypatch.setattr(servidor.urllib.request, "urlopen", autoconexion)
+    assert servidor._es_nuestra_app(5000) is False
+    assert servidor.ya_corriendo(5000) is None

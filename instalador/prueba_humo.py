@@ -6,6 +6,7 @@
 Sale con codigo 1 si algo falla. Se usa en el flujo de GitHub Actions sobre Windows.
 """
 import argparse
+import http.client
 import http.cookiejar
 import json
 import os
@@ -33,7 +34,7 @@ def _vivo(p):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{p}/api/ping", timeout=1.5) as r:
             return json.load(r).get("app") == "punto-de-venta"
-    except (OSError, ValueError):
+    except (OSError, ValueError, http.client.HTTPException):
         return False
 
 

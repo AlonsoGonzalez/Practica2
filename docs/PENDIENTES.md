@@ -3,26 +3,29 @@
 Origen: informe de la ronda de pruebas hecha en una PC con Windows (TODO del 11-nov). Estado de cada punto:
 
 ## Hecho (con prueba automática)
-- **Desinstalar cierra el programa** antes de borrar (`taskkill` en el desinstalador). CI en Windows: abre el programa, desinstala y verifica proceso cerrado, puerto 5000 libre y datos conservados.
-- **Respaldos**: al abrir, cada 4 h, al cerrar cada turno, al cerrar el sistema y a mano; nombre con hora y motivo; se conserva 24 h completas + el último de cada día por 30 días. (`tests/test_operacion.py`, `tests/test_arranque.py`)
-- **Restaurar un respaldo desde la app** (pestaña *Respaldos*, solo dueño): valida el archivo, guarda copia previa y migra respaldos viejos.
-- **Tablet**: el estado se muestra siempre en la ventanita; instalar o reinstalar la apaga (`--apagar-tablet`). CI verifica que reinstalar apaga `lan` y conserva datos.
-- **Ticket y Cobrar en celular**: barra fija abajo con total y «Ver ticket y cobrar»; el ticket sube como hoja.
-- **Sin scroll horizontal en celular**: las tablas se vuelven tarjetas; nombres largos se parten.
-- **Etiquetas visibles** en todos los campos; **botones de al menos 44 px**; papelera con texto y nombre accesible; confirmar antes de borrar.
-- **Mensajes de error** claros y con acentos; el límite de crédito dice cuánto debe, cuánto es la venta y cuánto le queda.
-- Cuadros de **prompt/confirm del navegador** reemplazados por diálogos propios (abonar, envases, contraseñas, cerrar turno, borrar).
-- **Salir** ya no deja ver menú ni datos detrás del inicio de sesión.
-- **Aviso «turno cerrado»** en Venta y botón Cobrar deshabilitado sin turno.
-- **Guía de primeros pasos** para el dueño; **estados vacíos** con mensaje; **teclado numérico** en campos numéricos; **favicon**.
-- Texto de Usuarios corregido (ya no menciona un acceso directo que no existe); aclarado el texto de la licencia de prueba.
-- Ventanita con tamaño fijo según su contenido (arreglo probable de la franja 136x40; **verificar en Windows**).
+**Instalador y sistema**
+- **Desinstalar cierra el programa** antes de borrar. CI en Windows: abre el programa, desinstala y verifica proceso cerrado, puerto 5000 libre y datos conservados. ✅ verificado en Windows
+- **Respaldos**: al abrir, cada 4 h, al cerrar cada turno, al cerrar el sistema y a mano; rotación 24 h + último de cada día por 30 días. ✅ el cierre de turno genera su respaldo (verificado en Windows)
+- **Restaurar un respaldo desde la app** (pestaña *Respaldos*, solo dueño): valida el archivo, guarda copia previa, migra respaldos viejos.
+- **Tablet**: el estado se muestra siempre en la ventanita; instalar o reinstalar la apaga. ✅ verificado en Windows
+- **Firewall**: regla para redes **privadas y de dominio** (nunca públicas), creada desde la ventanita al activar la tablet (Windows pide permiso de administrador). CI la crea y verifica el perfil Privado.
+- **Enlace http**: si Windows no tiene navegador predeterminado, se abre en Microsoft Edge en lugar de preguntar con qué app abrirlo.
+- **Pantalla «Activar licencia»**: se confirma con el servidor antes de mostrarla, así una respuesta atrasada ya no puede reabrirla tras activar.
+- Autoconexión TCP en Windows (un puerto cerrado que "se conecta consigo mismo") ya no se toma por la app. ✅ detectado en Windows.
+- Texto de Usuarios corregido; texto de la licencia de prueba aclarado; ventanita con tamaño fijo según su contenido (arreglo probable de la franja 136x40).
+
+**Experiencia de uso**
+- Venta en celular: barra fija con total + «Ver ticket y cobrar»; el ticket sube como hoja.
+- Sin scroll horizontal en celular (tablas como tarjetas); etiquetas visibles; botones ≥ 44 px; diálogos propios; aviso de turno cerrado; guía de primeros pasos; estados vacíos con ilustración; mensajes de error claros; teclado numérico; favicon; salir sin dejar ver la app.
+- **Ticket imprimible** (papel térmico de 80 mm) con opción de imprimir al cobrar.
+
+**Más bonito**
+- Sistema de diseño (rojo solo como acento, escala de espacios y tipografía, sombras suaves), encabezado compacto con pestaña activa, **íconos reales**, tarjetas de producto con ícono por categoría y existencias en color, total grande, **avisos (toasts)**, tablas con filas alternas y acciones agrupadas, **modo oscuro**, logo propio.
 
 ## Pendiente
-- [M] **Regla de Firewall** para el perfil Privado: hoy solo se explica en la ventanita (marcar «Redes privadas»). Crearla desde el instalador requiere permisos de administrador.
-- [M] **Firmar el instalador** (SmartScreen): requiere comprar un certificado de firma de código.
-- [M] **Windows pregunta con qué app abrir el enlace**: depende de que la PC no tenga navegador predeterminado; no se reprodujo en CI.
-- [M] **Pantalla «Activar licencia» que no desaparece sola**: no se pudo reproducir (en la prueba de navegador desaparece y pasa a crear la cuenta). Volver a probar en Windows.
-- [M] Licencia **ligada al ID de instalación**: las licencias reales ya lo permiten (`--instalacion`); la de prueba no lo lleva a propósito.
-- **Hacerlo más bonito** (sistema de diseño, íconos, modo oscuro, toasts): hecha solo una primera limpieza (encabezado más compacto, pestaña activa, tarjetas con existencias en color).
-- **Pruebas pendientes**: celular real, licencia vencida/renovación, reinicio con inicio automático, restaurar respaldo (en la app), cierre de turno por cajero y turnos simultáneos, envases/casco y pedido, impresión de ticket (no existe aún).
+- **Firmar el instalador** (SmartScreen): requiere comprar un certificado de firma de código.
+- **Licencia ligada al ID de instalación**: las licencias reales ya lo permiten (`--instalacion`); la de prueba no lo lleva a propósito.
+- **Probar en dispositivos reales**: celular real, impresora térmica real (el ticket se probó con emulación de impresión), reinicio con inicio automático, licencia vencida/renovación a los 30 días.
+- **Ver la ventanita en Windows** (solo se verificó que arranca y responde, no cómo se ve).
+- Herramienta de escritorio para el vendedor (emitir licencias sin terminal).
+- Recargas y pago de servicios (necesita un proveedor/agregador con contrato).

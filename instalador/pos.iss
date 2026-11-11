@@ -46,5 +46,6 @@ Filename: "{app}\PuntoDeVenta.exe"; Description: "Abrir Punto de Venta"; Flags: 
 [UninstallRun]
 ; el desinstalador debe cerrar el programa antes de borrar archivos (si no, quedan archivos y el puerto 5000 ocupados)
 Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM PuntoDeVenta.exe"; Flags: runhidden; RunOnceId: "CerrarPuntoDeVenta"
+Filename: "{sys}\netsh.exe"; Parameters: "advfirewall firewall delete rule name=""Punto de Venta (acceso desde tablet)"""; Flags: runhidden; RunOnceId: "QuitarReglaFirewall"
 
 ; Los datos de la tienda viven en %APPDATA%\PuntoVentaAbarrotes y NO se borran al desinstalar ni al actualizar.

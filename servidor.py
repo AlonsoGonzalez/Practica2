@@ -7,10 +7,12 @@ Opciones (solo para soporte tecnico):
   --lan          permitir acceso desde tablets/celulares (tambien se activa desde la ventana)
   --sin-ventana  modo consola, sin ventana (servidores, pruebas)
   --apagar-tablet  desactiva el acceso desde tablets/celulares y termina (lo usa el instalador)
+  --permitir-firewall  crea la regla del Firewall de Windows para redes privadas y termina
   POS_PORT       puerto preferido (por defecto 5000)
   POS_NO_BROWSER=1  no abrir el navegador
 """
 import argparse
+import http.client
 import json
 import logging
 import os
@@ -19,11 +21,11 @@ import sys
 import threading
 import traceback
 import urllib.request
-import webbrowser
 from concurrent.futures import ThreadPoolExecutor
 
 from waitress import create_server
 
+import navegador
 from pos import config, create_app, paths
 from pos.respaldos import respaldar_seguro
 
@@ -44,7 +46,8 @@ def _es_nuestra_app(puerto):
     try:
         with urllib.request.urlopen(f"http://127.0.0.1:{puerto}/api/ping", timeout=1.5) as r:
             return json.load(r).get("app") == "punto-de-venta"
-    except (OSError, ValueError, AttributeError):
+    except (OSError, ValueError, AttributeError, http.client.HTTPException):
+        # HTTPException: p. ej. una "autoconexion" TCP (el puerto se conecto consigo mismo y devolvio la propia peticion)
         return False
 
 
@@ -161,7 +164,11 @@ def main(argv=None):
     ap.add_argument("--lan", action="store_true", help="permitir acceso desde otros dispositivos de la red")
     ap.add_argument("--sin-ventana", action="store_true", help="modo consola, sin ventana")
     ap.add_argument("--apagar-tablet", action="store_true", help="desactiva el acceso desde tablets y termina")
+    ap.add_argument("--permitir-firewall", action="store_true", help="crea la regla del Firewall (redes privadas) y termina")
     args = ap.parse_args(argv)
+    if args.permitir_firewall:
+        import firewall
+        return 0 if firewall.agregar() else 1
     if args.apagar_tablet:   # el instalador lo ejecuta: una instalacion nueva nunca queda visible en la red sin avisar
         config.guardar({**config.cargar(), "lan": False})
         return 0
@@ -171,7 +178,7 @@ def main(argv=None):
     existente = ya_corriendo(int(os.environ.get("POS_PORT", PUERTO_INICIAL)))
     if existente:  # doble clic con la app ya abierta: solo se vuelve a abrir el navegador
         if abrir:
-            webbrowser.open(f"http://localhost:{existente}")
+            navegador.abrir(f"http://localhost:{existente}")
         return 0
     try:
         app = create_app()
@@ -189,13 +196,13 @@ def main(argv=None):
         srv = Servidor(app, lan=args.lan or cfg["lan"], puerto_inicial=int(os.environ.get("POS_PORT", PUERTO_INICIAL)))
         srv.iniciar()
         logging.info("Servidor listo en %s", srv.url)
-        navegador = lambda: webbrowser.open(srv.url)
+        abrir_url = lambda: navegador.abrir(srv.url)
         if abrir:
-            threading.Timer(1.0, navegador).start()
+            threading.Timer(1.0, abrir_url).start()
         if not args.sin_ventana:
             try:
                 import ventana
-                ventana.correr(srv, navegador, carpeta, lambda v: config.guardar({**cfg, "lan": v}))
+                ventana.correr(srv, abrir_url, carpeta, lambda v: config.guardar({**cfg, "lan": v}))
                 parar_respaldos.set()
                 respaldar_seguro(db_path, carpeta, "al-cerrar")
                 return 0
