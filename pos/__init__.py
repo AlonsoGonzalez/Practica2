@@ -2,7 +2,10 @@ import os
 
 from flask import Flask
 
+from datetime import timedelta
+
 from . import db, licencia, paths
+from .auth import bp as auth_bp, clave_secreta, exigir_login
 from .licencia_routes import bp as licencia_bp, exigir_licencia
 from .routes import bp
 
@@ -32,9 +35,14 @@ def create_app(db_path=None, public_key_pem=None):
     if exigir and app.config["LICENSE_PUBLIC_KEY"] is None:
         raise RuntimeError("POS_REQUIRE_LICENSE=1 pero falta pos/clave_publica.pem (la version instalada debe incluirla)")
     db.init_app(app)
-    app.before_request(exigir_licencia)
+    app.permanent_session_lifetime = timedelta(hours=12)
+    app.config.update(SESSION_COOKIE_HTTPONLY=True, SESSION_COOKIE_SAMESITE="Lax")
+    app.before_request(exigir_licencia)  # 1o licencia, 2o sesion y permisos
+    app.before_request(exigir_login)
     app.register_blueprint(licencia_bp)
+    app.register_blueprint(auth_bp)
     app.register_blueprint(bp)
     with app.app_context():
         db.init_db()
+        app.secret_key = clave_secreta()
     return app

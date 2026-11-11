@@ -1,4 +1,6 @@
 const $ = (s, r = document) => r.querySelector(s);
+// Cuando la sesion se cierra, api() ya muestra el login; evita el ruido de la promesa rechazada.
+addEventListener("unhandledrejection", e => { if (/Inicia sesion|Licencia|licencia/.test(e.reason?.message || "")) e.preventDefault(); });
 const money = c => "$" + (c / 100).toFixed(2);
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 const api = async (url, opts = {}) => {
@@ -7,6 +9,7 @@ const api = async (url, opts = {}) => {
     : opts);
   const data = await r.json();
   if (r.status === 402) mostrarLicencia(data);
+  if (r.status === 401 && data.estado === "sin_sesion") mostrarAuth();
   if (!r.ok) throw new Error(data.error || "Error");
   return data;
 };
@@ -21,6 +24,7 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   if (b.dataset.tab === "corte") cargarCorte();
   if (b.dataset.tab === "clientes") cargarClientes();
   if (b.dataset.tab === "pedido") cargarPedido();
+  if (b.dataset.tab === "usuarios") cargarUsuarios();
 });
 
 // ---- Venta ----
@@ -142,6 +146,8 @@ async function cargarCorte() {
   $("#k-fiado").textContent = money(c.fiado); $("#k-abonos").textContent = money(c.abonos);
   $("#k-casco").textContent = money(c.cascos_cobrados) + " / " + money(c.cascos_reembolsados);
   $("#k-caja").textContent = money(c.efectivo_en_caja);
+  $("#t-usr-corte tbody").innerHTML = c.por_usuario.map(u =>
+    `<tr><td>${esc(u.nombre)}</td><td>${u.ventas}</td><td>${money(u.total)}</td></tr>`).join("");
   const env = await api("/api/reportes/envases");
   $("#t-env tbody").innerHTML = env.map(e =>
     `<tr><td>${esc(e.nombre)}</td><td>${money(e.casco)}</td><td>${e.vacios}</td><td>${e.en_calle}</td><td>${money(e.casco_en_calle)}</td></tr>`).join("");
@@ -198,7 +204,7 @@ async function revisarLicencia() {
   if (!info.activa) return mostrarLicencia(info);
   $("#lic-badge").textContent = info.estado === "desarrollo" ? "Modo desarrollo (sin licencia)"
     : `Licencia ${info.tipo} · ${info.tienda}`;
-  cargarCatalogo();
+  iniciarSesion();
 }
 $("#form-licencia").onsubmit = async e => {
   e.preventDefault();
@@ -208,6 +214,78 @@ $("#form-licencia").onsubmit = async e => {
   if (!r.ok) return say($("#msg-lic"), d.error, false);
   $("#licencia-overlay").hidden = true; e.target.reset(); say($("#msg-lic"), "", true);
   revisarLicencia();
+};
+
+// ---- Sesion y usuarios ----
+let modoAuth = "login";
+function mostrarAuth(configurado) {
+  const setup = configurado === false;
+  modoAuth = setup ? "setup" : "login";
+  $("#form-auth [name=nombre]").hidden = !setup;
+  $("#form-auth [name=nombre]").required = setup;
+  $("#form-auth [name=password]").autocomplete = setup ? "new-password" : "current-password";
+  $("#auth-titulo").textContent = setup ? "Bienvenido: crea la cuenta del dueño" : "Iniciar sesión";
+  $("#auth-ayuda").textContent = setup ? "Será la cuenta con acceso total. Guarda bien la contraseña (mínimo 6 caracteres)." : "";
+  $("#auth-boton").textContent = setup ? "Crear cuenta" : "Entrar";
+  $("#auth-overlay").hidden = false;
+}
+function aplicarUsuario(u) {
+  document.body.dataset.rol = u.rol;
+  $("#usuario-actual").textContent = `${u.nombre} (${u.rol === "dueno" ? "dueño" : "cajero"})`;
+  $("#auth-overlay").hidden = true;
+  document.querySelectorAll("nav button, .tab").forEach(e => e.classList.remove("active"));
+  document.querySelector('nav [data-tab=venta]').classList.add("active"); $("#venta").classList.add("active");
+  carrito = {}; pintarCarrito(); cargarCatalogo();
+}
+async function iniciarSesion() {
+  const yo = await fetch("/api/auth/yo").then(r => r.json());
+  if (yo.usuario) return aplicarUsuario(yo.usuario);
+  mostrarAuth(yo.configurado);
+}
+$("#form-auth").onsubmit = async e => {
+  e.preventDefault();
+  const f = Object.fromEntries(new FormData(e.target));
+  const r = await fetch(modoAuth === "setup" ? "/api/auth/configurar" : "/api/auth/login",
+    {method: "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(f)});
+  const d = await r.json();
+  if (!r.ok) return say($("#msg-auth"), d.error, false);
+  e.target.reset(); say($("#msg-auth"), "", true); aplicarUsuario(d.usuario);
+};
+$("#btn-salir").onclick = async () => { await fetch("/api/auth/logout", {method: "POST"}); location.reload(); };
+$("#btn-password").onclick = async () => {
+  const actual = prompt("Contraseña actual"); if (!actual) return;
+  const nueva = prompt("Contraseña nueva (mínimo 6 caracteres)"); if (!nueva) return;
+  try { await api("/api/auth/password", {body: {actual, nueva}}); alert("Contraseña actualizada"); }
+  catch (e) { alert(e.message); }
+};
+async function cargarUsuarios() {
+  const us = await api("/api/usuarios");
+  $("#t-usuarios tbody").innerHTML = us.map(u =>
+    `<tr><td>${esc(u.nombre)}</td><td>${esc(u.usuario)}</td><td>${u.rol === "dueno" ? "Dueño" : "Cajero"}</td>
+     <td>${u.activo ? "Activo" : "<span class='bajo'>Desactivado</span>"}</td>
+     <td><button data-pw="${u.id}">Nueva contraseña</button>
+         <button data-act="${u.id}" data-val="${u.activo ? 0 : 1}">${u.activo ? "Desactivar" : "Activar"}</button></td></tr>`).join("");
+  const editar = async (id, body) => {
+    try { await api(`/api/usuarios/${id}`, {method: "PUT", body}); cargarUsuarios(); }
+    catch (e) { say($("#msg-usr"), e.message, false); }
+  };
+  document.querySelectorAll("[data-pw]").forEach(b => b.onclick = () => {
+    const p = prompt("Nueva contraseña (mínimo 6 caracteres)"); if (p) editar(b.dataset.pw, {password: p});
+  });
+  document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => editar(b.dataset.act, {activo: b.dataset.val === "1"}));
+  const red = await api("/api/red");
+  $("#acceso-red").innerHTML = red.urls.length
+    ? `<p>Abre una de estas direcciones en el navegador de la tablet (mismo Wi-Fi):</p>` +
+      red.urls.map(u => `<div class="url">${esc(u)}</div>`).join("")
+    : `<p>El acceso desde otros dispositivos está apagado. Abre el programa con el acceso directo
+       <b>"Punto de Venta (con acceso desde tablet)"</b> para activarlo.</p>`;
+}
+$("#form-usuario").onsubmit = async e => {
+  e.preventDefault();
+  try {
+    await api("/api/usuarios", {body: Object.fromEntries(new FormData(e.target))});
+    e.target.reset(); say($("#msg-usr"), "Usuario agregado", true); cargarUsuarios();
+  } catch (err) { say($("#msg-usr"), err.message, false); }
 };
 
 revisarLicencia();

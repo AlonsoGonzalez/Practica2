@@ -30,6 +30,12 @@ def ctx(tmp_path):
     return priv, client
 
 
+def entrar(client):
+    """Crea el dueno (si falta) e inicia sesion."""
+    client.post("/api/auth/configurar", json={"nombre": "D", "usuario": "dueno", "password": "secreto1"})
+    client.post("/api/auth/login", json={"usuario": "dueno", "password": "secreto1"})
+
+
 def instalacion(client):
     return client.get("/api/licencia").get_json()["instalacion"]
 
@@ -47,6 +53,7 @@ def test_activar_licencia_valida(ctx):
     clave = emitir(priv, instalacion=instalacion(c))
     r = c.post("/api/licencia", json={"clave": "\n".join([clave[:30], clave[30:]])})  # tolera saltos
     assert r.status_code == 200 and r.get_json()["tienda"] == "Abarrotes Prueba"
+    entrar(c)
     assert c.get("/api/productos").status_code == 200
     assert c.get("/api/licencia").get_json()["estado"] == "activa"
 
@@ -87,6 +94,7 @@ def test_licencia_activada_se_revalida_en_cada_peticion(tmp_path):
     ruta = str(tmp_path / "l.db")
     c = create_app(ruta, public_key_pem=pub).test_client()
     c.post("/api/licencia", json={"clave": emitir(priv, instalacion=instalacion(c))})
+    entrar(c)
     assert c.get("/api/productos").status_code == 200
     # la misma base abierta con OTRA llave publica ya no es valida
     _, otra_pub = par_de_llaves()
@@ -97,6 +105,7 @@ def test_licencia_activada_se_revalida_en_cada_peticion(tmp_path):
 def test_modo_desarrollo_sin_llave_publica(tmp_path):
     c = create_app(str(tmp_path / "d.db")).test_client()
     assert c.get("/api/licencia").get_json()["estado"] == "desarrollo"
+    entrar(c)
     assert c.get("/api/productos").status_code == 200
     assert c.post("/api/licencia", json={"clave": "x"}).status_code == 400
 

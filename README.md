@@ -81,5 +81,15 @@ La licencia también se valida sin conexión.
 Basta con que ejecute el instalador de la versión nueva encima: conserva sus datos y su licencia.
 Recuerda subir `FECHA_VERSION` en `pos/__init__.py` en cada versión.
 
-> **Seguridad:** la app todavía no tiene usuarios ni contraseña. Por defecto solo escucha en `localhost`.
-> No actives `POS_LAN=1` en redes que no sean de confianza ni la expongas a internet sin agregar login.
+### Usuarios y acceso desde tablet
+- La primera vez que se abre, el sistema pide crear la cuenta del **dueño**. Después hay dos roles:
+  **dueño** (todo) y **cajero** (cobrar, fiado/abonos y recibir envases; no ve costos, utilidades ni inventario).
+  El dueño administra usuarios en la pestaña *Usuarios*; cada venta queda registrada con quién la hizo.
+- Contraseñas con hash (scrypt), bloqueo tras 5 intentos fallidos, sesión de 12 h y cookie `HttpOnly`/`SameSite=Lax`.
+  Desactivar a un usuario o cambiarle la contraseña cierra sus sesiones abiertas al instante.
+- **Tablet/celular:** abrir el programa con el acceso directo *"Punto de Venta (con acceso desde tablet)"*
+  (o `python servidor.py --lan`). La pestaña *Usuarios* muestra la dirección (ej. `http://192.168.1.50:5000`) que se
+  escribe en el navegador de la tablet, conectada al mismo Wi-Fi. La computadora debe estar encendida con el programa abierto.
+  Conviene reservar una IP fija para esa computadora en el router para que la dirección no cambie.
+- El tráfico dentro del Wi-Fi va por HTTP sin cifrar: usa una red privada con contraseña, nunca un Wi-Fi público,
+  y no expongas el puerto a internet.

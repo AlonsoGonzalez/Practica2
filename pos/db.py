@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS productos (
     vacios INTEGER NOT NULL DEFAULT 0,      -- envases vacios en tienda
     en_calle INTEGER NOT NULL DEFAULT 0     -- envases con casco pagado fuera de la tienda
 );
+CREATE TABLE IF NOT EXISTS usuarios (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    usuario TEXT NOT NULL UNIQUE COLLATE NOCASE,
+    hash TEXT NOT NULL,
+    rol TEXT NOT NULL CHECK (rol IN ('dueno','cajero')),
+    activo INTEGER NOT NULL DEFAULT 1,
+    sesion_version INTEGER NOT NULL DEFAULT 1
+);
 CREATE TABLE IF NOT EXISTS ajustes (
     clave TEXT PRIMARY KEY,
     valor TEXT NOT NULL
@@ -55,7 +64,8 @@ CREATE TABLE IF NOT EXISTS ventas (
     cambio INTEGER NOT NULL,
     metodo TEXT NOT NULL DEFAULT 'efectivo',
     cliente_id INTEGER REFERENCES clientes(id),
-    casco INTEGER NOT NULL DEFAULT 0
+    casco INTEGER NOT NULL DEFAULT 0,
+    usuario_id INTEGER REFERENCES usuarios(id)
 );
 CREATE TABLE IF NOT EXISTS venta_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -107,7 +117,8 @@ RETORNABLES = {"7501055300181": 600, "7501055300600": 800}
 MIGRACIONES = {
     "productos": ["retornable INTEGER NOT NULL DEFAULT 0", "casco INTEGER NOT NULL DEFAULT 0",
                   "vacios INTEGER NOT NULL DEFAULT 0", "en_calle INTEGER NOT NULL DEFAULT 0"],
-    "ventas": ["cliente_id INTEGER REFERENCES clientes(id)", "casco INTEGER NOT NULL DEFAULT 0"],
+    "ventas": ["cliente_id INTEGER REFERENCES clientes(id)", "casco INTEGER NOT NULL DEFAULT 0",
+               "usuario_id INTEGER REFERENCES usuarios(id)"],
 }
 
 

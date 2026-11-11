@@ -1,7 +1,7 @@
 import math
 from datetime import date, timedelta
 
-from flask import Blueprint, jsonify, render_template, request
+from flask import Blueprint, g, jsonify, render_template, request
 
 from .db import get_db
 
@@ -35,8 +35,11 @@ def listar_productos():
         sql += " AND (nombre LIKE ? OR codigo LIKE ? OR categoria LIKE ?)"
         params += [f"%{q}%"] * 3
     sql += " ORDER BY categoria, nombre"
-    rows = get_db().execute(sql, params).fetchall()
-    return jsonify([dict(r) for r in rows])
+    rows = [dict(r) for r in get_db().execute(sql, params).fetchall()]
+    if g.usuario["rol"] != "dueno":  # el cajero no ve costos
+        for r in rows:
+            r.pop("costo")
+    return jsonify(rows)
 
 
 @bp.post("/api/productos")
@@ -189,8 +192,10 @@ def crear_venta():
             return err("El monto recibido es menor al total")
     cambio = recibido - total if metodo == "efectivo" else 0
     cur = db.execute(
-        "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco) VALUES (?,?,?,?,?,?)",
-        (total, recibido, cambio, metodo, cliente["id"] if cliente else None, casco_total),
+        "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco,usuario_id)"
+        " VALUES (?,?,?,?,?,?,?)",
+        (total, recibido, cambio, metodo, cliente["id"] if cliente else None, casco_total,
+         g.usuario["id"]),
     )
     vid = cur.lastrowid
     for p, cant, dev, casco in lineas:
@@ -269,8 +274,15 @@ def corte():
         " FROM casco_mov WHERE date(fecha)=?",
         (fecha,),
     ).fetchone()
+    por_usuario = db.execute(
+        "SELECT COALESCE(u.nombre,'(sin usuario)') nombre, COUNT(*) ventas, SUM(v.total) total"
+        " FROM ventas v LEFT JOIN usuarios u ON u.id=v.usuario_id WHERE date(v.fecha)=?"
+        " GROUP BY v.usuario_id ORDER BY total DESC",
+        (fecha,),
+    ).fetchall()
     return jsonify(
         fecha=fecha,
+        por_usuario=[dict(u) for u in por_usuario],
         num_ventas=r["n"],
         total=r["total"],
         fiado=fiado,

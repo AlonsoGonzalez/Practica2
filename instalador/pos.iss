@@ -30,6 +30,7 @@ Source: "..\dist\PuntoDeVenta\*"; DestDir: "{app}"; Flags: recursesubdirs ignore
 [Icons]
 Name: "{group}\Punto de Venta"; Filename: "{app}\PuntoDeVenta.exe"
 Name: "{autodesktop}\Punto de Venta"; Filename: "{app}\PuntoDeVenta.exe"; Tasks: icono
+Name: "{group}\Punto de Venta (con acceso desde tablet)"; Filename: "{app}\PuntoDeVenta.exe"; Parameters: "--lan"
 
 [Run]
 Filename: "{app}\PuntoDeVenta.exe"; Description: "Abrir Punto de Venta"; Flags: nowait postinstall skipifsilent

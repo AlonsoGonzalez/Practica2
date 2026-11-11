@@ -4,8 +4,9 @@ from pos import create_app
 
 @pytest.fixture
 def client(tmp_path):
-    app = create_app(str(tmp_path / "t.db"))
-    return app.test_client()
+    c = create_app(str(tmp_path / "t.db")).test_client()
+    assert c.post("/api/auth/configurar", json={"nombre": "Dueno", "usuario": "dueno", "password": "secreto1"}).status_code == 201
+    return c
 
 
 def prod(client, nombre="Coca-Cola 600 ml"):

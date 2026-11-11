@@ -7,7 +7,18 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
-<div id="licencia-overlay" hidden>
+<div id="auth-overlay" class="overlay" hidden>
+  <form id="form-auth">
+    <h2 id="auth-titulo">Iniciar sesión</h2>
+    <p id="auth-ayuda"></p>
+    <input name="nombre" placeholder="Tu nombre" hidden>
+    <input name="usuario" placeholder="Usuario" autocomplete="username" required>
+    <input name="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+    <button class="primario" id="auth-boton">Entrar</button>
+    <div id="msg-auth" class="msg"></div>
+  </form>
+</div>
+<div id="licencia-overlay" class="overlay" hidden>
   <form id="form-licencia">
     <h2>Activar licencia</h2>
     <p id="lic-mensaje"></p>
@@ -22,12 +33,18 @@
   <h1>🛒 Abarrotes · Punto de Venta</h1>
   <nav>
     <button data-tab="venta" class="active">Venta</button>
-    <button data-tab="inventario">Inventario</button>
+    <button data-tab="inventario" data-solo-dueno>Inventario</button>
     <button data-tab="clientes">Fiado</button>
-    <button data-tab="pedido">Pedido</button>
-    <button data-tab="corte">Corte de caja</button>
+    <button data-tab="pedido" data-solo-dueno>Pedido</button>
+    <button data-tab="corte" data-solo-dueno>Corte de caja</button>
+    <button data-tab="usuarios" data-solo-dueno>Usuarios</button>
   </nav>
-  <small id="lic-badge"></small>
+  <div class="sesion">
+    <small id="lic-badge"></small>
+    <span id="usuario-actual"></span>
+    <button id="btn-password" class="mini">Contraseña</button>
+    <button id="btn-salir" class="mini">Salir</button>
+  </div>
 </header>
 
 <main>
@@ -97,6 +114,22 @@
   <p><b>Total estimado:</b> <span id="p-total">$0.00</span></p>
 </section>
 
+<section id="usuarios" class="tab">
+  <h2>Usuarios</h2>
+  <p><b>Dueño:</b> acceso total. <b>Cajero:</b> solo cobra, ve productos sin costos, maneja fiado y recibe envases.</p>
+  <form id="form-usuario" class="fila">
+    <input name="nombre" placeholder="Nombre" required>
+    <input name="usuario" placeholder="Usuario" required>
+    <input name="password" type="password" placeholder="Contraseña (mín. 6)" required>
+    <select name="rol"><option value="cajero">Cajero</option><option value="dueno">Dueño</option></select>
+    <button class="primario">Agregar</button>
+  </form>
+  <div id="msg-usr" class="msg"></div>
+  <table id="t-usuarios"><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody></tbody></table>
+  <h3>Acceso desde tablet o celular</h3>
+  <div id="acceso-red"></div>
+</section>
+
 <section id="corte" class="tab">
   <h2>Corte de caja</h2>
   <label>Fecha <input type="date" id="fecha-corte"></label>
@@ -110,6 +143,8 @@
     <div><small>Cascos cobrados / reembolsados</small><b id="k-casco">$0.00 / $0.00</b></div>
     <div><small>Efectivo en caja</small><b id="k-caja">$0.00</b></div>
   </div>
+  <h3>Ventas por usuario</h3>
+  <table id="t-usr-corte"><thead><tr><th>Usuario</th><th>Ventas</th><th>Total</th></tr></thead><tbody></tbody></table>
   <h3>Más vendidos</h3>
   <table id="t-top"><thead><tr><th>Producto</th><th>Unidades</th><th>Importe</th></tr></thead><tbody></tbody></table>
   <h3>Envases retornables</h3>
