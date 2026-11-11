@@ -12,6 +12,8 @@
   <nav>
     <button data-tab="venta" class="active">Venta</button>
     <button data-tab="inventario">Inventario</button>
+    <button data-tab="clientes">Fiado</button>
+    <button data-tab="pedido">Pedido</button>
     <button data-tab="corte">Corte de caja</button>
   </nav>
 </header>
@@ -26,7 +28,12 @@
     <h2>Ticket</h2>
     <table id="carrito"><tbody></tbody></table>
     <div class="total">Total: <span id="total">$0.00</span></div>
-    <label>Recibido <input id="recibido" type="number" step="0.5" min="0"></label>
+    <label>Pago
+      <select id="metodo"><option value="efectivo">Efectivo</option><option value="fiado">Fiado</option></select>
+    </label>
+    <label id="lbl-cliente" hidden>Cliente <select id="cliente"></select></label>
+    <div class="cascos">Casco: <span id="casco">$0.00</span></div>
+    <label id="lbl-recibido">Recibido <input id="recibido" type="number" step="0.5" min="0"></label>
     <div class="cambio">Cambio: <span id="cambio">$0.00</span></div>
     <button id="cobrar" class="primario">Cobrar</button>
     <button id="vaciar">Vaciar</button>
@@ -43,13 +50,39 @@
     <input name="precio" type="number" step="0.01" min="0" placeholder="Precio" required>
     <input name="costo" type="number" step="0.01" min="0" placeholder="Costo">
     <input name="stock" type="number" min="0" placeholder="Stock">
+    <label><input name="retornable" type="checkbox"> Retornable</label>
+    <input name="casco" type="number" step="0.01" min="0" placeholder="Casco $">
     <button class="primario">Agregar</button>
   </form>
   <div id="msg-inv" class="msg"></div>
   <table id="tabla-inv">
-    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Costo</th><th>Stock</th><th>Ajustar</th><th></th></tr></thead>
+    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Costo</th><th>Stock</th><th>Envases (vacíos / en calle)</th><th>Ajustar</th><th></th></tr></thead>
     <tbody></tbody>
   </table>
+</section>
+
+<section id="clientes" class="tab">
+  <h2>Fiado</h2>
+  <form id="form-cliente" class="fila">
+    <input name="nombre" placeholder="Nombre" required>
+    <input name="telefono" placeholder="Teléfono">
+    <input name="limite" type="number" step="1" min="0" placeholder="Límite de crédito (0 = sin límite)">
+    <button class="primario">Agregar cliente</button>
+  </form>
+  <div id="msg-cli" class="msg"></div>
+  <table id="t-clientes"><thead><tr><th>Cliente</th><th>Teléfono</th><th>Límite</th><th>Debe</th><th></th></tr></thead><tbody></tbody></table>
+  <p><b>Total por cobrar:</b> <span id="por-cobrar">$0.00</span></p>
+</section>
+
+<section id="pedido" class="tab">
+  <h2>Sugerencia de pedido</h2>
+  <div class="fila">
+    <label>Vendido en los últimos <input id="p-hist" type="number" min="1" value="14" style="width:70px"> días</label>
+    <label>Cubrir <input id="p-cob" type="number" min="1" value="7" style="width:70px"> días</label>
+    <button id="p-calc" class="primario">Calcular</button>
+  </div>
+  <table id="t-pedido"><thead><tr><th>Producto</th><th>Stock</th><th>Venta/día</th><th>Días de stock</th><th>Pedir</th><th>Costo est.</th></tr></thead><tbody></tbody></table>
+  <p><b>Total estimado:</b> <span id="p-total">$0.00</span></p>
 </section>
 
 <section id="corte" class="tab">
@@ -60,9 +93,15 @@
     <div><small>Total vendido</small><b id="k-total">$0.00</b></div>
     <div><small>Utilidad</small><b id="k-util">$0.00</b></div>
     <div><small>Ticket promedio</small><b id="k-prom">$0.00</b></div>
+    <div><small>Fiado del día</small><b id="k-fiado">$0.00</b></div>
+    <div><small>Abonos cobrados</small><b id="k-abonos">$0.00</b></div>
+    <div><small>Cascos cobrados / reembolsados</small><b id="k-casco">$0.00 / $0.00</b></div>
+    <div><small>Efectivo en caja</small><b id="k-caja">$0.00</b></div>
   </div>
   <h3>Más vendidos</h3>
   <table id="t-top"><thead><tr><th>Producto</th><th>Unidades</th><th>Importe</th></tr></thead><tbody></tbody></table>
+  <h3>Envases retornables</h3>
+  <table id="t-env"><thead><tr><th>Producto</th><th>Casco</th><th>Vacíos en tienda</th><th>En calle</th><th>Casco en calle</th></tr></thead><tbody></tbody></table>
   <h3>⚠ Stock bajo</h3>
   <table id="t-bajo"><thead><tr><th>Producto</th><th>Stock</th><th>Mínimo</th></tr></thead><tbody></tbody></table>
 </section>

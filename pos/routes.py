@@ -1,4 +1,5 @@
-from datetime import date
+import math
+from datetime import date, timedelta
 
 from flask import Blueprint, jsonify, render_template, request
 
@@ -47,16 +48,18 @@ def crear_producto():
         costo = pesos_a_centavos(d.get("costo", 0))
         stock = int(d.get("stock", 0))
         minimo = int(d.get("stock_minimo", 5))
+        retornable = 1 if d.get("retornable") else 0
+        casco = pesos_a_centavos(d.get("casco") or 0) if retornable else 0
     except (KeyError, ValueError, AttributeError):
         return err("Datos de producto invalidos")
-    if not nombre or not codigo or precio < 0 or costo < 0:
+    if not nombre or not codigo or precio < 0 or costo < 0 or casco < 0:
         return err("Datos de producto invalidos")
     db = get_db()
     try:
         cur = db.execute(
-            "INSERT INTO productos (codigo,nombre,categoria,precio,costo,stock,stock_minimo)"
-            " VALUES (?,?,?,?,?,?,?)",
-            (codigo, nombre, d.get("categoria", "General"), precio, costo, stock, minimo),
+            "INSERT INTO productos (codigo,nombre,categoria,precio,costo,stock,stock_minimo,retornable,casco)"
+            " VALUES (?,?,?,?,?,?,?,?,?)",
+            (codigo, nombre, d.get("categoria", "General"), precio, costo, stock, minimo, retornable, casco),
         )
     except Exception:
         return err("Ya existe un producto con ese codigo", 409)
@@ -81,13 +84,17 @@ def editar_producto(pid):
         precio = pesos_a_centavos(d["precio"]) if "precio" in d else p["precio"]
         costo = pesos_a_centavos(d["costo"]) if "costo" in d else p["costo"]
         minimo = int(d.get("stock_minimo", p["stock_minimo"]))
+        retornable = (1 if d["retornable"] else 0) if "retornable" in d else p["retornable"]
+        casco = pesos_a_centavos(d["casco"]) if "casco" in d else p["casco"]
     except (ValueError, AttributeError):
         return err("Datos de producto invalidos")
-    if not nombre or precio < 0 or costo < 0:
+    if not nombre or precio < 0 or costo < 0 or casco < 0:
         return err("Datos de producto invalidos")
     db.execute(
-        "UPDATE productos SET nombre=?,categoria=?,precio=?,costo=?,stock_minimo=? WHERE id=?",
-        (nombre, d.get("categoria", p["categoria"]), precio, costo, minimo, pid),
+        "UPDATE productos SET nombre=?,categoria=?,precio=?,costo=?,stock_minimo=?,retornable=?,casco=?"
+        " WHERE id=?",
+        (nombre, d.get("categoria", p["categoria"]), precio, costo, minimo, retornable,
+         casco if retornable else 0, pid),
     )
     db.commit()
     return jsonify(ok=True)
@@ -133,37 +140,60 @@ def crear_venta():
     items = d.get("items") or []
     if not items:
         return err("El carrito esta vacio")
+    metodo = d.get("metodo", "efectivo")
+    if metodo not in ("efectivo", "fiado"):
+        return err("Metodo de pago invalido")
     db = get_db()
-    lineas, total = [], 0
-    pedidos = {}
+    pedidos = {}  # producto_id -> [cantidad, envases_devueltos]
     try:
         for it in items:
-            cant = int(it["cantidad"])
-            if cant <= 0:
+            cant, dev = int(it["cantidad"]), int(it.get("envases_devueltos", 0))
+            if cant <= 0 or dev < 0 or dev > cant:
                 raise ValueError
-            pedidos[int(it["producto_id"])] = pedidos.get(int(it["producto_id"]), 0) + cant
+            acc = pedidos.setdefault(int(it["producto_id"]), [0, 0])
+            acc[0] += cant
+            acc[1] += dev
     except (KeyError, ValueError, TypeError):
         return err("Items invalidos")
-    for pid, cant in pedidos.items():
+    lineas, subtotal, casco_total = [], 0, 0
+    for pid, (cant, dev) in pedidos.items():
         p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
         if not p:
             return err(f"Producto {pid} no encontrado", 404)
         if p["stock"] < cant:
             return err(f"Stock insuficiente de {p['nombre']} (hay {p['stock']})", 409)
-        lineas.append((p, cant))
-        total += p["precio"] * cant
-    try:
-        recibido = pesos_a_centavos(d["recibido"]) if "recibido" in d else total
-    except ValueError:
-        return err("Monto recibido invalido")
-    if recibido < total:
-        return err("El monto recibido es menor al total")
+        if dev and not p["retornable"]:
+            return err(f"{p['nombre']} no es retornable")
+        casco = (cant - dev) * p["casco"] if p["retornable"] else 0
+        lineas.append((p, cant, dev, casco))
+        subtotal += p["precio"] * cant
+        casco_total += casco
+    total = subtotal + casco_total
+
+    cliente = None
+    if metodo == "fiado":
+        cliente = db.execute(
+            "SELECT * FROM clientes WHERE id=? AND activo=1", (d.get("cliente_id"),)
+        ).fetchone()
+        if not cliente:
+            return err("Selecciona un cliente para vender a fiado", 400)
+        if cliente["limite"] and cliente["saldo"] + total > cliente["limite"]:
+            return err("La venta excede el limite de credito del cliente", 409)
+        recibido = 0
+    else:
+        try:
+            recibido = pesos_a_centavos(d["recibido"]) if "recibido" in d else total
+        except ValueError:
+            return err("Monto recibido invalido")
+        if recibido < total:
+            return err("El monto recibido es menor al total")
+    cambio = recibido - total if metodo == "efectivo" else 0
     cur = db.execute(
-        "INSERT INTO ventas (total,recibido,cambio) VALUES (?,?,?)",
-        (total, recibido, recibido - total),
+        "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco) VALUES (?,?,?,?,?,?)",
+        (total, recibido, cambio, metodo, cliente["id"] if cliente else None, casco_total),
     )
     vid = cur.lastrowid
-    for p, cant in lineas:
+    for p, cant, dev, casco in lineas:
         db.execute(
             "INSERT INTO venta_items (venta_id,producto_id,cantidad,precio,costo) VALUES (?,?,?,?,?)",
             (vid, p["id"], cant, p["precio"], p["costo"]),
@@ -173,8 +203,20 @@ def crear_venta():
             "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
             (p["id"], -cant, f"venta #{vid}"),
         )
+        if p["retornable"]:
+            db.execute(
+                "UPDATE productos SET vacios=vacios+?, en_calle=en_calle+? WHERE id=?",
+                (dev, cant - dev, p["id"]),
+            )
+            if casco:
+                db.execute(
+                    "INSERT INTO casco_mov (producto_id,cantidad,monto) VALUES (?,?,?)",
+                    (p["id"], cant - dev, casco),
+                )
+    if cliente:
+        db.execute("UPDATE clientes SET saldo=saldo+? WHERE id=?", (total, cliente["id"]))
     db.commit()
-    return jsonify(id=vid, total=total, recibido=recibido, cambio=recibido - total), 201
+    return jsonify(id=vid, total=total, casco=casco_total, recibido=recibido, cambio=cambio), 201
 
 
 @bp.get("/api/ventas/<int:vid>")
@@ -215,10 +257,27 @@ def corte():
     ventas = db.execute(
         "SELECT id, fecha, total FROM ventas WHERE date(fecha)=? ORDER BY id DESC", (fecha,)
     ).fetchall()
+    fiado = db.execute(
+        "SELECT COALESCE(SUM(total),0) FROM ventas WHERE date(fecha)=? AND metodo='fiado'", (fecha,)
+    ).fetchone()[0]
+    abonos = db.execute(
+        "SELECT COALESCE(SUM(monto),0) FROM abonos WHERE date(fecha)=?", (fecha,)
+    ).fetchone()[0]
+    cascos = db.execute(
+        "SELECT COALESCE(SUM(CASE WHEN monto>0 THEN monto END),0) cobrado,"
+        " COALESCE(-SUM(CASE WHEN monto<0 THEN monto END),0) reembolsado"
+        " FROM casco_mov WHERE date(fecha)=?",
+        (fecha,),
+    ).fetchone()
     return jsonify(
         fecha=fecha,
         num_ventas=r["n"],
         total=r["total"],
+        fiado=fiado,
+        abonos=abonos,
+        cascos_cobrados=cascos["cobrado"],
+        cascos_reembolsados=cascos["reembolsado"],
+        efectivo_en_caja=r["total"] - fiado + abonos - cascos["reembolsado"],
         utilidad=utilidad,
         ticket_promedio=r["total"] // r["n"] if r["n"] else 0,
         top_productos=[dict(t) for t in top],
@@ -232,3 +291,170 @@ def stock_bajo():
         "SELECT * FROM productos WHERE activo=1 AND stock<=stock_minimo ORDER BY stock"
     ).fetchall()
     return jsonify([dict(r) for r in rows])
+
+
+# ---------- Envases retornables y casco ----------
+def _retornable(db, pid):
+    return db.execute(
+        "SELECT * FROM productos WHERE id=? AND activo=1 AND retornable=1", (pid,)
+    ).fetchone()
+
+
+def _cantidad(d):
+    try:
+        n = int(d["cantidad"])
+    except (KeyError, ValueError, TypeError):
+        return None
+    return n if n > 0 else None
+
+
+@bp.post("/api/productos/<int:pid>/devolucion")
+def devolucion_envases(pid):
+    """Un cliente regresa envases vacios: se le reembolsa el casco."""
+    n = _cantidad(request.get_json(silent=True) or {})
+    db = get_db()
+    p = _retornable(db, pid)
+    if not p:
+        return err("Producto retornable no encontrado", 404)
+    if n is None:
+        return err("Cantidad invalida")
+    if n > p["en_calle"]:
+        return err(f"Solo hay {p['en_calle']} envases con casco fuera de la tienda", 409)
+    reembolso = n * p["casco"]
+    db.execute("UPDATE productos SET en_calle=en_calle-?, vacios=vacios+? WHERE id=?", (n, n, pid))
+    db.execute(
+        "INSERT INTO casco_mov (producto_id,cantidad,monto) VALUES (?,?,?)", (pid, -n, -reembolso)
+    )
+    db.commit()
+    return jsonify(reembolso=reembolso)
+
+
+@bp.post("/api/productos/<int:pid>/canje-proveedor")
+def canje_proveedor(pid):
+    """Se entregan envases vacios al repartidor y se reciben llenos."""
+    n = _cantidad(request.get_json(silent=True) or {})
+    db = get_db()
+    p = _retornable(db, pid)
+    if not p:
+        return err("Producto retornable no encontrado", 404)
+    if n is None:
+        return err("Cantidad invalida")
+    if n > p["vacios"]:
+        return err(f"Solo hay {p['vacios']} envases vacios en la tienda", 409)
+    db.execute("UPDATE productos SET vacios=vacios-?, stock=stock+? WHERE id=?", (n, n, pid))
+    db.execute(
+        "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
+        (pid, n, "canje de envases con proveedor"),
+    )
+    db.commit()
+    return jsonify(stock=p["stock"] + n, vacios=p["vacios"] - n)
+
+
+@bp.get("/api/reportes/envases")
+def reporte_envases():
+    rows = get_db().execute(
+        "SELECT id,nombre,casco,stock,vacios,en_calle,en_calle*casco AS casco_en_calle"
+        " FROM productos WHERE activo=1 AND retornable=1 ORDER BY nombre"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+# ---------- Fiado ----------
+@bp.get("/api/clientes")
+def listar_clientes():
+    rows = get_db().execute(
+        "SELECT * FROM clientes WHERE activo=1 ORDER BY saldo DESC, nombre"
+    ).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@bp.post("/api/clientes")
+def crear_cliente():
+    d = request.get_json(silent=True) or {}
+    nombre = str(d.get("nombre") or "").strip()
+    try:
+        limite = pesos_a_centavos(d.get("limite") or 0)
+    except ValueError:
+        return err("Limite invalido")
+    if not nombre or limite < 0:
+        return err("Datos de cliente invalidos")
+    db = get_db()
+    cur = db.execute(
+        "INSERT INTO clientes (nombre,telefono,limite) VALUES (?,?,?)",
+        (nombre, str(d.get("telefono") or "").strip(), limite),
+    )
+    db.commit()
+    return jsonify(id=cur.lastrowid), 201
+
+
+@bp.get("/api/clientes/<int:cid>")
+def ver_cliente(cid):
+    db = get_db()
+    c = db.execute("SELECT * FROM clientes WHERE id=? AND activo=1", (cid,)).fetchone()
+    if not c:
+        return err("Cliente no encontrado", 404)
+    ventas = db.execute(
+        "SELECT id,fecha,total FROM ventas WHERE cliente_id=? ORDER BY id DESC", (cid,)
+    ).fetchall()
+    abonos = db.execute(
+        "SELECT id,fecha,monto FROM abonos WHERE cliente_id=? ORDER BY id DESC", (cid,)
+    ).fetchall()
+    return jsonify(**dict(c), ventas=[dict(v) for v in ventas], abonos=[dict(a) for a in abonos])
+
+
+@bp.post("/api/clientes/<int:cid>/abono")
+def abonar(cid):
+    d = request.get_json(silent=True) or {}
+    try:
+        monto = pesos_a_centavos(d["monto"])
+    except (KeyError, ValueError):
+        return err("Monto invalido")
+    db = get_db()
+    c = db.execute("SELECT * FROM clientes WHERE id=? AND activo=1", (cid,)).fetchone()
+    if not c:
+        return err("Cliente no encontrado", 404)
+    if monto <= 0:
+        return err("Monto invalido")
+    if monto > c["saldo"]:
+        return err("El abono es mayor al saldo del cliente", 409)
+    db.execute("INSERT INTO abonos (cliente_id,monto) VALUES (?,?)", (cid, monto))
+    db.execute("UPDATE clientes SET saldo=saldo-? WHERE id=?", (monto, cid))
+    db.commit()
+    return jsonify(saldo=c["saldo"] - monto)
+
+
+# ---------- Sugerencia de pedido ----------
+@bp.get("/api/sugerencia-pedido")
+def sugerencia_pedido():
+    """Cuanto pedir para cubrir `cobertura` dias segun el promedio vendido en `historial` dias."""
+    try:
+        historial = max(1, int(request.args.get("historial", 14)))
+        cobertura = max(1, int(request.args.get("cobertura", 7)))
+    except ValueError:
+        return err("Parametros invalidos")
+    desde = (date.today() - timedelta(days=historial - 1)).isoformat()
+    rows = get_db().execute(
+        "SELECT p.*, COALESCE(SUM(i.cantidad),0) vendido FROM productos p"
+        " LEFT JOIN (SELECT i.producto_id, i.cantidad FROM venta_items i"
+        "            JOIN ventas v ON v.id=i.venta_id WHERE date(v.fecha)>=?) i"
+        "   ON i.producto_id=p.id"
+        " WHERE p.activo=1 GROUP BY p.id",
+        (desde,),
+    ).fetchall()
+    sugerencias, total = [], 0
+    for r in rows:
+        promedio = r["vendido"] / historial
+        objetivo = math.ceil(promedio * cobertura) + r["stock_minimo"]
+        pedir = max(0, objetivo - r["stock"])
+        if not pedir:
+            continue
+        dias_stock = round(r["stock"] / promedio, 1) if promedio else None
+        costo = pedir * r["costo"]
+        total += costo
+        sugerencias.append(dict(
+            id=r["id"], nombre=r["nombre"], categoria=r["categoria"], stock=r["stock"],
+            promedio_diario=round(promedio, 2), dias_de_stock=dias_stock,
+            pedir=pedir, costo_estimado=costo, retornable=bool(r["retornable"]),
+        ))
+    sugerencias.sort(key=lambda x: (x["dias_de_stock"] is None, x["dias_de_stock"] or 0))
+    return jsonify(historial=historial, cobertura=cobertura, total_estimado=total, items=sugerencias)

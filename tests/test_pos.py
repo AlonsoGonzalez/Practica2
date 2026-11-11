@@ -61,3 +61,66 @@ def test_stock_bajo(client):
     p = prod(client, "Pan Bimbo Blanco Grande")
     client.post(f"/api/productos/{p['id']}/ajuste", json={"cantidad": -p["stock"]})
     assert any(x["id"] == p["id"] for x in client.get("/api/reportes/stock-bajo").get_json())
+
+
+def venta(client, pid, cant, **extra):
+    return client.post("/api/ventas", json={"items": [{"producto_id": pid, "cantidad": cant,
+                       **extra.pop("item", {})}], **extra})
+
+
+def test_fiado_saldo_limite_y_abonos(client):
+    p = prod(client)
+    cid = client.post("/api/clientes", json={"nombre": "Doña Mary", "limite": 50}).get_json()["id"]
+    assert venta(client, p["id"], 1, metodo="fiado").status_code == 400  # sin cliente
+    r = venta(client, p["id"], 2, metodo="fiado", cliente_id=cid)
+    assert r.status_code == 201 and r.get_json()["cambio"] == 0
+    saldo = p["precio"] * 2
+    assert client.get(f"/api/clientes/{cid}").get_json()["saldo"] == saldo
+    assert venta(client, p["id"], 20, metodo="fiado", cliente_id=cid).status_code == 409  # excede limite
+    assert client.post(f"/api/clientes/{cid}/abono", json={"monto": 9999}).status_code == 409
+    assert client.post(f"/api/clientes/{cid}/abono", json={"monto": 10}).get_json()["saldo"] == saldo - 1000
+    c = client.get("/api/corte").get_json()
+    assert c["fiado"] == saldo and c["abonos"] == 1000
+    assert c["efectivo_en_caja"] == 1000  # solo el abono entra a caja
+
+
+def test_retornables_casco(client):
+    p = prod(client, "Coca-Cola Retornable 600 ml")
+    assert p["retornable"] and p["casco"] == 800
+    # 3 botellas, regresa 1 vacia -> paga 2 cascos
+    r = venta(client, p["id"], 3, item={"envases_devueltos": 1}).get_json()
+    assert r["casco"] == 1600 and r["total"] == p["precio"] * 3 + 1600
+    e = client.get("/api/reportes/envases").get_json()
+    e = next(x for x in e if x["id"] == p["id"])
+    assert (e["vacios"], e["en_calle"], e["casco_en_calle"]) == (1, 2, 1600)
+    # el cliente regresa 2 envases -> reembolso de casco
+    assert client.post(f"/api/productos/{p['id']}/devolucion", json={"cantidad": 3}).status_code == 409
+    assert client.post(f"/api/productos/{p['id']}/devolucion", json={"cantidad": 2}).get_json()["reembolso"] == 1600
+    c = client.get("/api/corte").get_json()
+    assert c["cascos_cobrados"] == 1600 and c["cascos_reembolsados"] == 1600
+    # canje con proveedor: 3 vacios -> 3 llenos
+    stock = prod(client, "Coca-Cola Retornable 600 ml")["stock"]
+    assert client.post(f"/api/productos/{p['id']}/canje-proveedor", json={"cantidad": 4}).status_code == 409
+    assert client.post(f"/api/productos/{p['id']}/canje-proveedor", json={"cantidad": 3}).status_code == 200
+    assert prod(client, "Coca-Cola Retornable 600 ml")["stock"] == stock + 3
+
+
+def test_envases_devueltos_solo_en_retornables(client):
+    p = prod(client)  # no retornable
+    assert venta(client, p["id"], 1, item={"envases_devueltos": 1}).status_code == 400
+    assert venta(client, p["id"], 1, item={"envases_devueltos": -1}).status_code == 400
+
+
+def test_sugerencia_pedido(client):
+    p = prod(client)
+    venta(client, p["id"], 14)  # 14 vendidos en 14 dias -> 1 por dia
+    d = client.get("/api/sugerencia-pedido?historial=14&cobertura=7").get_json()
+    s = next(i for i in d["items"] if i["id"] == p["id"]) if any(i["id"] == p["id"] for i in d["items"]) else None
+    # stock 34, objetivo = 7 + 12 = 19 -> no hace falta pedir
+    assert s is None
+    venta(client, p["id"], 30)
+    d = client.get("/api/sugerencia-pedido?historial=14&cobertura=7").get_json()
+    s = next(i for i in d["items"] if i["id"] == p["id"])
+    assert s["stock"] == 4 and s["pedir"] == (-(-44 * 7 // 14)) + 12 - 4
+    assert d["total_estimado"] >= s["costo_estimado"]
+    assert client.get("/api/sugerencia-pedido?historial=x").status_code == 400

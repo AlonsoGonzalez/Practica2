@@ -11,7 +11,32 @@ CREATE TABLE IF NOT EXISTS productos (
     costo INTEGER NOT NULL DEFAULT 0 CHECK (costo >= 0),
     stock INTEGER NOT NULL DEFAULT 0,
     stock_minimo INTEGER NOT NULL DEFAULT 5,
+    activo INTEGER NOT NULL DEFAULT 1,
+    retornable INTEGER NOT NULL DEFAULT 0,
+    casco INTEGER NOT NULL DEFAULT 0,       -- deposito por envase, centavos
+    vacios INTEGER NOT NULL DEFAULT 0,      -- envases vacios en tienda
+    en_calle INTEGER NOT NULL DEFAULT 0     -- envases con casco pagado fuera de la tienda
+);
+CREATE TABLE IF NOT EXISTS clientes (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    nombre TEXT NOT NULL,
+    telefono TEXT NOT NULL DEFAULT '',
+    limite INTEGER NOT NULL DEFAULT 0,      -- 0 = sin limite
+    saldo INTEGER NOT NULL DEFAULT 0,       -- lo que debe, centavos
     activo INTEGER NOT NULL DEFAULT 1
+);
+CREATE TABLE IF NOT EXISTS abonos (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    cliente_id INTEGER NOT NULL REFERENCES clientes(id),
+    monto INTEGER NOT NULL CHECK (monto > 0)
+);
+CREATE TABLE IF NOT EXISTS casco_mov (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fecha TEXT NOT NULL DEFAULT (datetime('now','localtime')),
+    producto_id INTEGER NOT NULL REFERENCES productos(id),
+    cantidad INTEGER NOT NULL,
+    monto INTEGER NOT NULL                  -- + cobrado, - reembolsado
 );
 CREATE TABLE IF NOT EXISTS ventas (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -19,7 +44,9 @@ CREATE TABLE IF NOT EXISTS ventas (
     total INTEGER NOT NULL,
     recibido INTEGER NOT NULL,
     cambio INTEGER NOT NULL,
-    metodo TEXT NOT NULL DEFAULT 'efectivo'
+    metodo TEXT NOT NULL DEFAULT 'efectivo',
+    cliente_id INTEGER REFERENCES clientes(id),
+    casco INTEGER NOT NULL DEFAULT 0
 );
 CREATE TABLE IF NOT EXISTS venta_items (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -61,7 +88,18 @@ SEED = [
     ("7501022222224", "Arroz 1 kg", "Abarrotes", 2600, 2100, 12, 5),
     ("7501033333331", "Frijol 1 kg", "Abarrotes", 3400, 2800, 12, 5),
     ("7501044444448", "Aceite Vegetal 1 L", "Abarrotes", 4200, 3500, 10, 4),
+    ("7501055300600", "Coca-Cola Retornable 600 ml", "Refrescos", 1300, 1000, 48, 12),
 ]
+
+# codigo -> casco (centavos) de los envases retornables
+RETORNABLES = {"7501055300181": 600, "7501055300600": 800}
+
+# columnas agregadas despues de la primera version (migracion de bases existentes)
+MIGRACIONES = {
+    "productos": ["retornable INTEGER NOT NULL DEFAULT 0", "casco INTEGER NOT NULL DEFAULT 0",
+                  "vacios INTEGER NOT NULL DEFAULT 0", "en_calle INTEGER NOT NULL DEFAULT 0"],
+    "ventas": ["cliente_id INTEGER REFERENCES clientes(id)", "casco INTEGER NOT NULL DEFAULT 0"],
+}
 
 
 def get_db():
@@ -81,12 +119,19 @@ def close_db(_exc=None):
 def init_db():
     conn = get_db()
     conn.executescript(SCHEMA)
+    for tabla, cols in MIGRACIONES.items():
+        existentes = {r["name"] for r in conn.execute(f"PRAGMA table_info({tabla})")}
+        for col in cols:
+            if col.split()[0] not in existentes:
+                conn.execute(f"ALTER TABLE {tabla} ADD COLUMN {col}")
     if conn.execute("SELECT COUNT(*) FROM productos").fetchone()[0] == 0:
         conn.executemany(
             "INSERT INTO productos (codigo,nombre,categoria,precio,costo,stock,stock_minimo)"
             " VALUES (?,?,?,?,?,?,?)",
             SEED,
         )
+        for codigo, casco in RETORNABLES.items():
+            conn.execute("UPDATE productos SET retornable=1, casco=? WHERE codigo=?", (casco, codigo))
     conn.commit()
 
 

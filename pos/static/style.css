@@ -26,3 +26,7 @@ button.primario{background:#d8001d;color:#fff;border-color:#d8001d}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;margin:1rem 0}
 .kpis div{background:#fff;padding:1rem;border-radius:8px}.kpis small{display:block;color:#777}.kpis b{font-size:1.4rem}
 .bajo{color:#c00;font-weight:600}
+#clientes.active,#pedido.active{display:block}
+select{padding:.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem}
+.cascos{margin:.4rem 0;color:#777}
+.dev{width:60px}
