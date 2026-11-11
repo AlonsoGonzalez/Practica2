@@ -101,6 +101,16 @@ jobs:
           if (-not (Test-Path "$datos\pos.db")) { throw "Desinstalar borro los datos de la tienda" }
           Write-Host "OK: instala, funciona, desinstala y conserva los datos"
 
+      - name: Licencia temporal para probar el instalador de PRUEBA
+        if: steps.llave.outputs.prueba == 'true'
+        shell: bash
+        run: |
+          # Solo sirve con ESTE instalador (su llave publica de prueba es unica y su privada se descarta).
+          python tools/licencias.py emitir --privada llaves-prueba/privada.pem --tienda "PRUEBA - no es una venta real" \
+            --tipo prueba --expira "$(date -d '+30 days' +%F)" > salida/LICENCIA-DE-PRUEBA.txt
+          printf '\nPega esta clave en la pantalla "Activar licencia" del instalador de prueba.\nEs valida 30 dias y SOLO con este instalador.\n' >> salida/LICENCIA-DE-PRUEBA.txt
+          cat salida/LICENCIA-DE-PRUEBA.txt | head -c 120; echo
+
       - name: Resumen de las pruebas automaticas en Windows
         if: always()
         shell: pwsh
@@ -115,4 +125,6 @@ jobs:
         if: steps.llave.outputs.prueba == 'true'
         with:
           name: PuntoDeVenta-Setup-SOLO-PRUEBA
-          path: salida/*.exe
+          path: |
+            salida/*.exe
+            salida/LICENCIA-DE-PRUEBA.txt
