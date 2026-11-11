@@ -35,11 +35,11 @@ OTRA_INSTALACION = "otra_instalacion"
 DESARROLLO = "desarrollo"  # no hay llave publica configurada: no se exige licencia
 
 MENSAJES = {
-    SIN_LICENCIA: "Esta instalacion no tiene licencia. Ingresa tu clave para activarla.",
-    INVALIDA: "La clave de licencia no es valida.",
-    EXPIRADA: "La licencia expiro.",
-    VERSION_NO_CUBIERTA: "Tu licencia no cubre esta version. Renueva las actualizaciones.",
-    OTRA_INSTALACION: "Esta clave fue emitida para otra instalacion.",
+    SIN_LICENCIA: "Esta instalación no tiene licencia. Escribe tu clave para activarla.",
+    INVALIDA: "La clave de licencia no es válida. Revisa que la copiaste completa.",
+    EXPIRADA: "La licencia expiró.",
+    VERSION_NO_CUBIERTA: "Tu licencia no cubre esta versión del programa. Renueva las actualizaciones.",
+    OTRA_INSTALACION: "Esta clave fue emitida para otra instalación.",
 }
 
 

@@ -22,7 +22,6 @@ def correr(srv, abrir_navegador, carpeta_respaldos, guardar_lan):
     """Muestra la ventana y bloquea hasta que el usuario cierra el sistema. Lanza tk.TclError si no hay pantalla."""
     root = tk.Tk()
     root.title("Punto de Venta")
-    root.resizable(False, False)
     try:
         root.iconbitmap(paths.recurso("instalador", "icono.ico"))
     except tk.TclError:
@@ -38,16 +37,32 @@ def correr(srv, abrir_navegador, carpeta_respaldos, guardar_lan):
 
     lan = tk.BooleanVar(value=srv.lan)
     direccion = tk.StringVar()
+    # El estado de la tablet SIEMPRE se muestra: nadie debe tener el sistema abierto a la red sin enterarse.
+    estado = tk.Label(marco, font=("Segoe UI", 10, "bold"), wraplength=360, justify="left")
     ayuda = tk.Label(marco, justify="left", wraplength=360, fg="#555", font=("Segoe UI", 9))
     caja = tk.Entry(marco, textvariable=direccion, state="readonly", justify="center", font=("Segoe UI", 11, "bold"))
+    firewall = tk.Label(marco, justify="left", wraplength=360, fg="#555", font=("Segoe UI", 9),
+                        text="Si Windows pregunta por el Firewall, marca «Redes privadas» y permite el acceso.")
+
+    def ajustar():
+        """Tamaño fijo según el contenido: evita que la ventana quede como una franja al restaurarla."""
+        root.update_idletasks()
+        w, h = max(root.winfo_reqwidth(), 420), root.winfo_reqheight()
+        root.geometry(f"{w}x{h}")
+        root.minsize(w, h)
 
     def refrescar_lan():
+        if srv.lan:
+            estado.config(text="📱 Acceso desde tablet ACTIVADO: otros dispositivos de tu red Wi-Fi pueden abrir el sistema.", fg="#b86e00")
+        else:
+            estado.config(text="Acceso desde tablet: desactivado (solo esta computadora puede abrir el sistema).", fg="#555")
+        for w in (ayuda, caja, firewall):
+            w.pack_forget()
         if srv.lan and srv.urls_lan():
             direccion.set(srv.urls_lan()[0])
             ayuda.config(text="En la tablet o el celular (conectado al mismo Wi-Fi) abre el navegador y escribe esta dirección:")
-            ayuda.pack(pady=(8, 2)); caja.pack(fill="x")
-        else:
-            ayuda.pack_forget(); caja.pack_forget()
+            ayuda.pack(pady=(8, 2), anchor="w"); caja.pack(fill="x"); firewall.pack(pady=(6, 0), anchor="w")
+        ajustar()
 
     def cambiar_lan():
         try:
@@ -58,8 +73,9 @@ def correr(srv, abrir_navegador, carpeta_respaldos, guardar_lan):
             messagebox.showerror("Punto de Venta", f"No se pudo cambiar el acceso desde tablet:\n{e}")
         refrescar_lan()
 
+    estado.pack(pady=(14, 2), anchor="w")
     tk.Checkbutton(marco, text="Permitir usar el sistema desde una tablet o celular", variable=lan,
-                   command=cambiar_lan, font=("Segoe UI", 10)).pack(pady=(14, 0), anchor="w")
+                   command=cambiar_lan, font=("Segoe UI", 10)).pack(anchor="w")
     refrescar_lan()
 
     tk.Button(marco, text="Abrir carpeta de respaldos", relief="groove",
@@ -73,4 +89,5 @@ def correr(srv, abrir_navegador, carpeta_respaldos, guardar_lan):
 
     tk.Button(marco, text="Cerrar el sistema", relief="groove", command=salir).pack(fill="x")
     root.protocol("WM_DELETE_WINDOW", salir)
+    ajustar()
     root.mainloop()

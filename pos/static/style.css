@@ -1,46 +1,134 @@
+:root{
+  --rojo:#d8001d;--rojo-osc:#a30016;--fondo:#f4f4f6;--tarjeta:#fff;--borde:#dcdce0;--texto:#222;--suave:#666;
+  --ok:#0a7a2f;--aviso:#b86e00;--mal:#c00;--radio:10px;--sombra:0 1px 3px #0002;--toque:44px;
+}
 *{box-sizing:border-box}
-body{margin:0;font-family:system-ui,sans-serif;background:#f4f4f6;color:#222}
-header{background:#d8001d;color:#fff;display:flex;justify-content:space-between;align-items:center;padding:.6rem 1rem;flex-wrap:wrap}
-header h1{margin:0;font-size:1.2rem}
-nav button{background:transparent;color:#fff;border:0;padding:.5rem 1rem;cursor:pointer;font-size:1rem;border-radius:6px}
-nav button.active{background:#fff3}
-main{padding:1rem}
-.tab{display:none}.tab.active{display:flex;gap:1rem;flex-wrap:wrap}
-#inventario.active,#corte.active{display:block}
-.col{flex:2;min-width:300px}.carrito{flex:1;background:#fff;padding:1rem;border-radius:8px;align-self:flex-start}
-input{padding:.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem}
-#buscar{width:100%;margin-bottom:.8rem}
-.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:.6rem}
-.prod{background:#fff;border:1px solid #ddd;border-radius:8px;padding:.7rem;cursor:pointer;text-align:left}
-.prod:hover{border-color:#d8001d}.prod b{display:block;margin-top:.3rem;color:#d8001d}
-.prod small{color:#777}.prod.agotado{opacity:.4;pointer-events:none}
-table{width:100%;border-collapse:collapse;background:#fff}
-th,td{padding:.4rem .5rem;border-bottom:1px solid #eee;text-align:left}
-.total{font-size:1.6rem;font-weight:700;margin:.8rem 0}
-.cambio{margin:.5rem 0;font-size:1.2rem}
-button{padding:.55rem 1rem;border:1px solid #bbb;border-radius:6px;background:#fff;cursor:pointer;font-size:1rem}
-button.primario{background:#d8001d;color:#fff;border-color:#d8001d}
-.carrito button{width:100%;margin-top:.4rem}
-.fila{display:flex;gap:.4rem;flex-wrap:wrap;margin-bottom:.6rem}.fila input{flex:1;min-width:110px}
-.msg{min-height:1.4rem;margin-top:.5rem}.ok{color:#0a7a2f}.error{color:#c00}
+html{-webkit-text-size-adjust:100%}
+body{overflow-wrap:anywhere;margin:0;font-family:system-ui,"Segoe UI",sans-serif;background:var(--fondo);color:var(--texto);font-size:16px}
+body.sin-sesion header,body.sin-sesion main{visibility:hidden}
+body[data-rol=cajero] [data-solo-dueno]{display:none!important}   /* el cajero no ve lo del dueño (el servidor tambien lo bloquea) */   /* nada de la app se ve antes de iniciar sesion */
+
+/* ---------- encabezado ---------- */
+header{background:var(--rojo);color:#fff;display:flex;align-items:center;gap:.5rem 1rem;padding:.35rem .8rem;flex-wrap:wrap;position:sticky;top:0;z-index:5;box-shadow:var(--sombra)}
+header h1{margin:0;font-size:1.05rem;white-space:nowrap}
+.logo{background:#fff;border-radius:8px;padding:0 .3rem}
+nav{display:flex;gap:.2rem;overflow-x:auto;flex:1;min-width:0;scrollbar-width:thin}
+nav button{background:transparent;color:#fff;border:0;border-bottom:3px solid transparent;border-radius:6px 6px 0 0;padding:.5rem .8rem;white-space:nowrap}
+nav button:hover{background:#fff2}
+nav button.active{background:#fff3;border-bottom-color:#fff;font-weight:700}
+.sesion{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap;font-size:.9rem}
+.sesion small{opacity:.85}
+
+/* ---------- controles (minimo 44 px para dedos y tablets) ---------- */
+button,select,input:not([type=checkbox]){min-height:var(--toque);font:inherit}
+button{min-width:var(--toque);padding:.5rem 1rem;border:1px solid var(--borde);border-radius:8px;background:var(--tarjeta);color:var(--texto);cursor:pointer}
+button:hover{border-color:#999}
+button:focus-visible,input:focus-visible,select:focus-visible,textarea:focus-visible{outline:3px solid #1a73e8;outline-offset:1px}
+button:disabled{opacity:.45;cursor:not-allowed}
+button.primario{background:var(--rojo);color:#fff;border-color:var(--rojo);font-weight:600}
+button.primario:hover:not(:disabled){background:var(--rojo-osc)}
+button.grande{font-size:1.2rem;min-height:56px;width:100%}
+button.peligro{color:var(--mal);border-color:#e7b4b4}
+button.mini{background:#fff3;color:#fff;border-color:#fff6;padding:.3rem .7rem}
+input:not([type=checkbox]),select,textarea{padding:.5rem .6rem;border:1px solid var(--borde);border-radius:8px;background:#fff;color:var(--texto);width:100%}
+.campo{display:flex;flex-direction:column;gap:.25rem;min-width:0}
+.campo>span{font-size:.85rem;font-weight:600;color:var(--suave)}
+.campo.check{flex-direction:row;align-items:center;gap:.5rem;min-height:var(--toque)}
+.campo.check input{width:24px;height:24px}
+.campo.check span{font-size:1rem;color:var(--texto)}
+
+main{padding:1rem;max-width:1400px;margin:0 auto}
+h2{margin:.2rem 0 .8rem}h3{margin:1.2rem 0 .5rem}
+.tab{display:none}.tab.active{display:block}
+.fila{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:.6rem;align-items:end;margin-bottom:.6rem}
+.nota{color:var(--suave);font-size:.9rem}
+
+/* ---------- venta ---------- */
+.venta-layout{display:flex;gap:1rem;align-items:flex-start}
+.venta-layout .col{flex:2;min-width:0}
+.venta-layout .carrito{flex:1;min-width:300px;position:sticky;top:64px}
+.carrito{background:var(--tarjeta);padding:1rem;border-radius:var(--radio);box-shadow:var(--sombra)}
+.carrito .campo,.carrito button{margin-top:.5rem}
+.carrito button{width:100%}
+.ticket-cab{display:flex;justify-content:space-between;align-items:center}
+.ticket-cab h2{margin:0}
+.buscar{margin-bottom:.8rem}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(150px,100%),1fr));gap:.6rem}
+.prod{min-width:0;background:var(--tarjeta);border:1px solid var(--borde);border-radius:var(--radio);padding:.7rem;text-align:left;box-shadow:var(--sombra);min-height:110px;display:flex;flex-direction:column;gap:.15rem}
+.prod:hover{border-color:var(--rojo)}
+.prod b{color:var(--rojo);font-size:1.15rem;margin-top:auto}
+.prod small{color:var(--suave)}
+.prod .st{font-weight:600}.st.ok{color:var(--ok)}.st.bajo{color:var(--aviso)}.st.cero{color:var(--mal)}
+.prod.agotado{opacity:.45;pointer-events:none}
+.total{font-size:1.8rem;font-weight:800;margin:.6rem 0}
+.cambio{margin:.4rem 0;font-size:1.15rem}.cascos{color:var(--suave);margin-top:.4rem}
+#carrito td{padding:.35rem .2rem;vertical-align:middle}
+#carrito .cant{display:flex;align-items:center;gap:.3rem;justify-content:center}
+#carrito .cant button{width:var(--toque);margin:0;padding:0;font-size:1.3rem}
+#carrito .dev{width:70px}
+.aviso{display:flex;gap:.8rem;align-items:center;justify-content:space-between;flex-wrap:wrap;background:#fff4e0;border:1px solid #f0c36d;border-radius:var(--radio);padding:.7rem 1rem;margin-bottom:.8rem}
+.guia{background:#eef6ff;border:1px solid #b9d6f7;border-radius:var(--radio);padding:.7rem 1rem;margin-bottom:.8rem}
+.guia h3{margin:.2rem 0}.guia li{margin:.4rem 0}.guia li button{margin-left:.4rem}
+.guia li.hecho{text-decoration:line-through;color:var(--suave)}
+#barra-ticket{display:none}
+.solo-movil{display:none}
+
+/* ---------- tablas, mensajes, KPIs ---------- */
+table{width:100%;border-collapse:collapse;background:var(--tarjeta);border-radius:var(--radio);overflow:hidden}
+th,td{padding:.5rem .6rem;border-bottom:1px solid #eee;text-align:left}
+th{background:#fafafa;font-size:.85rem;color:var(--suave);position:sticky;top:0}
+tbody tr:nth-child(even){background:#fcfcfd}
+td button{margin:.1rem}
+tr.vacio td{text-align:center;color:var(--suave);padding:1.2rem}
+.msg{min-height:1.4rem;margin:.5rem 0}.ok{color:var(--ok)}.error{color:var(--mal)}
 .kpis{display:grid;grid-template-columns:repeat(auto-fit,minmax(150px,1fr));gap:.6rem;margin:1rem 0}
-.kpis div{background:#fff;padding:1rem;border-radius:8px}.kpis small{display:block;color:#777}.kpis b{font-size:1.4rem}
-.bajo{color:#c00;font-weight:600}
-#clientes.active,#pedido.active{display:block}
-select{padding:.5rem;border:1px solid #ccc;border-radius:6px;font-size:1rem}
-.cascos{margin:.4rem 0;color:#777}
-.dev{width:60px}
-.overlay{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:10}
+.kpis div{background:var(--tarjeta);padding:.9rem;border-radius:var(--radio);box-shadow:var(--sombra)}
+.kpis small{display:block;color:var(--suave)}.kpis b{font-size:1.35rem}
+.bajo{color:var(--mal);font-weight:600}
+.falta{color:var(--mal);font-weight:700}.sobra{color:var(--aviso);font-weight:700}.cuadra{color:var(--ok);font-weight:700}
+.url{font-size:1.1rem;font-weight:700;user-select:all}
+.fecha{max-width:220px}
+
+/* ---------- ventanas emergentes ---------- */
+.overlay{position:fixed;inset:0;background:#000b;display:flex;align-items:center;justify-content:center;z-index:10;padding:1rem}
+.overlay.opaco{background:var(--fondo)}
 #auth-overlay{z-index:20}
 .overlay[hidden]{display:none}
-#form-licencia,#form-auth{background:#fff;padding:1.5rem;border-radius:10px;width:min(460px,92vw);display:flex;flex-direction:column;gap:.6rem}
-#form-licencia textarea{padding:.5rem;border:1px solid #ccc;border-radius:6px;font-family:monospace}
+#form-licencia,#form-auth{background:#fff;padding:1.5rem;border-radius:var(--radio);width:min(460px,100%);display:flex;flex-direction:column;gap:.7rem;box-shadow:0 4px 20px #0003}
 #lic-instalacion{font-size:1.3rem;font-weight:700;letter-spacing:.05em;user-select:all}
 #lic-badge{opacity:.85}
-#form-auth input{width:100%}
-.sesion{display:flex;gap:.5rem;align-items:center;flex-wrap:wrap}
-button.mini{padding:.25rem .6rem;font-size:.85rem;background:#fff3;color:#fff;border-color:#fff6}
-body[data-rol=cajero] [data-solo-dueno]{display:none}
-#usuarios.active,#caja.active{display:block}
-.falta{color:#c00;font-weight:700}.sobra{color:#b86e00;font-weight:700}.cuadra{color:#0a7a2f;font-weight:700}
-.url{font-size:1.1rem;font-weight:700;user-select:all}
+dialog{border:0;border-radius:var(--radio);padding:1.2rem;width:min(420px,92vw);box-shadow:0 4px 24px #0005}
+dialog::backdrop{background:#0008}
+dialog h3{margin-top:0}
+#dlg-campos{display:flex;flex-direction:column;gap:.6rem;margin:.6rem 0}
+dialog .botones{display:flex;gap:.6rem;justify-content:flex-end;margin-top:.8rem}
+
+/* ---------- celular y tablet vertical ---------- */
+@media (max-width:820px){
+  main{padding:.7rem .7rem 5.5rem}
+  header{padding:.3rem .5rem}
+  .sesion{width:100%;justify-content:space-between}
+  .solo-movil{display:flex}
+  .venta-layout{display:block}
+  /* el ticket pasa a ser una hoja que sube desde abajo; la barra de cobro siempre esta a la vista */
+  .venta-layout .carrito{position:fixed;left:0;right:0;bottom:0;top:auto;max-height:88vh;overflow-y:auto;z-index:8;
+    border-radius:16px 16px 0 0;transform:translateY(105%);transition:transform .2s;box-shadow:0 -4px 20px #0004;min-width:0}
+  body.ticket-abierto .venta-layout .carrito{transform:none}
+  #barra-ticket{display:flex;position:fixed;left:0;right:0;bottom:0;z-index:7;background:#fff;border-top:1px solid var(--borde);
+    box-shadow:0 -2px 10px #0002;padding:.5rem .8rem;align-items:center;justify-content:space-between;gap:.6rem}
+  body.ticket-abierto #barra-ticket{display:none}
+  .grid{grid-template-columns:repeat(auto-fill,minmax(min(130px,100%),1fr))}
+  /* las tablas se vuelven tarjetas: nada de scroll horizontal */
+  table:not(#carrito),table:not(#carrito) tbody,table:not(#carrito) tr,table:not(#carrito) td{display:block;width:100%}
+  table:not(#carrito) thead{display:none}
+  table:not(#carrito){background:transparent}
+  table:not(#carrito) tr{background:#fff;border:1px solid var(--borde);border-radius:var(--radio);margin:.6rem 0;padding:.3rem .7rem;box-shadow:var(--sombra)}
+  table:not(#carrito) td{display:flex;justify-content:space-between;align-items:center;gap:1rem;border:0;padding:.35rem 0;text-align:right}
+  table:not(#carrito) td::before{content:attr(data-label);font-weight:600;color:var(--suave);text-align:left;flex:0 0 40%}
+  table:not(#carrito) td[data-label=""]::before,table:not(#carrito) td[data-label="Acciones"]::before{display:none}
+  table:not(#carrito) td[data-label="Acciones"],table:not(#carrito) td[data-label=""]{justify-content:flex-start;flex-wrap:wrap}
+  table:not(#carrito) tr.vacio{border-style:dashed}
+  table:not(#carrito) tr.vacio td::before{display:none}
+  .fila{grid-template-columns:1fr}
+  .kpis{grid-template-columns:repeat(2,1fr)}
+}

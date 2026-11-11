@@ -7,6 +7,7 @@ from datetime import timedelta
 
 from . import db, licencia, paths
 from .caja import bp as caja_bp
+from .sistema import bp as sistema_bp
 from .auth import bp as auth_bp, clave_secreta, exigir_login
 from .licencia_routes import bp as licencia_bp, exigir_licencia
 from .routes import bp
@@ -32,6 +33,7 @@ def create_app(db_path=None, public_key_pem=None):
         "POS_DB", os.path.join(paths.datos_dir(), "pos.db"))
     os.makedirs(os.path.dirname(os.path.abspath(app.config["DATABASE"])), exist_ok=True)
     app.config["FECHA_VERSION"] = FECHA_VERSION
+    app.config["RESPALDOS_DIR"] = os.path.join(os.path.dirname(os.path.abspath(app.config["DATABASE"])), "respaldos")
     app.config["LICENSE_PUBLIC_KEY"] = _leer_llave_publica(public_key_pem)
     # La version instalada siempre exige licencia; en desarrollo es opcional.
     exigir = os.environ.get("POS_REQUIRE_LICENSE") == "1" or paths.empaquetada()
@@ -49,6 +51,7 @@ def create_app(db_path=None, public_key_pem=None):
     app.register_blueprint(licencia_bp)
     app.register_blueprint(auth_bp)
     app.register_blueprint(caja_bp)
+    app.register_blueprint(sistema_bp)
     app.register_blueprint(bp)
     @app.errorhandler(HTTPException)
     def _error_http(e):

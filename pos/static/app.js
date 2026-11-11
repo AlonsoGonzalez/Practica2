@@ -1,6 +1,7 @@
 const $ = (s, r = document) => r.querySelector(s);
+const $$ = (s, r = document) => [...r.querySelectorAll(s)];
 // Cuando la sesion se cierra, api() ya muestra el login; evita el ruido de la promesa rechazada.
-addEventListener("unhandledrejection", e => { if (/Inicia sesion|Licencia|licencia/.test(e.reason?.message || "")) e.preventDefault(); });
+addEventListener("unhandledrejection", e => { if (/Inicia sesi[oó]n|Licencia|licencia/.test(e.reason?.message || "")) e.preventDefault(); });
 const money = c => "$" + (c / 100).toFixed(2);
 const esc = s => String(s).replace(/[&<>"']/g, ch => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#39;"}[ch]));
 const api = async (url, opts = {}) => {
@@ -10,32 +11,98 @@ const api = async (url, opts = {}) => {
   const data = await r.json();
   if (r.status === 402) mostrarLicencia(data);
   if (r.status === 401 && data.estado === "sin_sesion") mostrarAuth();
-  if (data.estado === "sin_turno") irATab("caja");
-  if (!r.ok) throw new Error(data.error || "Error");
+  if (data.estado === "sin_turno") { refrescarTurno(); irATab("caja"); }
+  if (!r.ok) throw new Error(data.error || "Ocurrió un error. Inténtalo de nuevo.");
   return data;
 };
 const say = (el, text, ok) => { el.textContent = text; el.className = "msg " + (ok ? "ok" : "error"); };
 
-let productos = [], carrito = {};
+// ---- Ventanas de dialogo propias (en lugar de prompt/confirm del navegador: se ven bien y se usan con el dedo) ----
+function dialogo({titulo, texto = "", campos = [], boton = "Aceptar", peligro = false}) {
+  return new Promise(resolver => {
+    const d = $("#dlg"), f = $("#dlg-form");
+    let valor = null;
+    $("#dlg-titulo").textContent = titulo;
+    $("#dlg-texto").textContent = texto;
+    $("#dlg-campos").innerHTML = campos.map(c =>
+      `<label class="campo"><span>${esc(c.etiqueta)}</span>
+         <input name="${esc(c.nombre)}" type="${c.tipo || "text"}" ${c.step ? `step="${c.step}"` : ""}
+           ${c.min !== undefined ? `min="${c.min}"` : ""} ${c.tipo === "number" ? 'inputmode="decimal"' : ""}
+           autocomplete="${c.tipo === "password" ? "new-password" : "off"}" required></label>`).join("");
+    const ok = $("#dlg-ok");
+    ok.textContent = boton;
+    ok.classList.toggle("peligro", peligro); ok.classList.toggle("primario", !peligro);
+    f.onsubmit = e => { e.preventDefault(); valor = Object.fromEntries(new FormData(f)); d.close(); };
+    $("#dlg-cancelar").onclick = () => d.close();
+    d.onclose = () => resolver(valor);              // Escape o "Cancelar" -> null
+    d.showModal();
+    ($("input", d) || ok).focus();
+  });
+}
+const confirmar = (titulo, texto, boton = "Confirmar", peligro = false) =>
+  dialogo({titulo, texto, boton, peligro}).then(v => v !== null);
 
-document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
-  document.querySelectorAll("nav button, .tab").forEach(e => e.classList.remove("active"));
+// ---- Tablas: etiquetas para el modo tarjeta del celular y mensaje cuando no hay datos ----
+function prepararTablas() {
+  $$("table:not(#carrito)").forEach(t => {
+    const tb = t.tBodies[0]; if (!tb) return;
+    const heads = $$("thead th", t).map(th => th.textContent.trim());
+    const filas = [...tb.rows].filter(r => !r.classList.contains("vacio"));
+    filas.forEach(tr => [...tr.cells].forEach((td, i) => { if (td.dataset.label !== (heads[i] ?? "")) td.dataset.label = heads[i] ?? ""; }));
+    const vacio = tb.querySelector("tr.vacio");
+    if (!filas.length && !vacio)
+      tb.insertAdjacentHTML("beforeend", `<tr class="vacio"><td colspan="${heads.length || 1}" data-label="">${esc(t.dataset.vacio || "Sin datos.")}</td></tr>`);
+    else if (filas.length && vacio) vacio.remove();
+  });
+}
+new MutationObserver(prepararTablas).observe($("main"), {childList: true, subtree: true});
+prepararTablas();
+
+let productos = [], carrito = {}, turnoAbierto = false;
+
+function irATab(nombre) { $(`nav [data-tab=${nombre}]`).click(); }
+$$("nav button").forEach(b => b.onclick = () => {
+  $$("nav button, .tab").forEach(e => e.classList.remove("active"));
   b.classList.add("active"); $("#" + b.dataset.tab).classList.add("active");
-  if (b.dataset.tab === "inventario") cargarInventario();
-  if (b.dataset.tab === "corte") cargarCorte();
-  if (b.dataset.tab === "clientes") cargarClientes();
-  if (b.dataset.tab === "pedido") cargarPedido();
-  if (b.dataset.tab === "usuarios") cargarUsuarios();
-  if (b.dataset.tab === "caja") cargarCaja();
+  b.scrollIntoView?.({inline: "center", block: "nearest"});
+  document.body.classList.remove("ticket-abierto");
+  const t = b.dataset.tab;
+  if (t === "inventario") cargarInventario();
+  if (t === "corte") cargarCorte();
+  if (t === "clientes") cargarClientes();
+  if (t === "pedido") cargarPedido();
+  if (t === "usuarios") cargarUsuarios();
+  if (t === "caja") cargarCaja();
+  if (t === "respaldos") cargarRespaldos();
 });
+
+// ---- Estado del turno (sin turno abierto no se puede cobrar) ----
+async function refrescarTurno() {
+  const t = await fetch("/api/turno").then(r => r.json()).catch(() => null);
+  if (!t || t.error) return null;
+  turnoAbierto = t.abierto;
+  $("#banner-turno").hidden = turnoAbierto;
+  $("#paso-turno")?.classList.toggle("hecho", turnoAbierto);
+  actualizarCobrar();
+  return t;
+}
+$("#ir-a-caja").onclick = () => irATab("caja");
+$$("[data-ir]").forEach(b => b.onclick = () => irATab(b.dataset.ir));
+function mostrarGuia() {
+  $("#primeros-pasos").hidden = document.body.dataset.rol !== "dueno" || localStorage.getItem("pos_guia_oculta") === "1";
+}
+$("#ocultar-pasos").onclick = () => { localStorage.setItem("pos_guia_oculta", "1"); mostrarGuia(); };
 
 // ---- Venta ----
 async function cargarCatalogo() {
   productos = await api("/api/productos?q=" + encodeURIComponent($("#buscar").value));
-  $("#catalogo").innerHTML = productos.map(p =>
-    `<button class="prod ${p.stock <= 0 ? "agotado" : ""}" data-id="${p.id}">
-       <small>${esc(p.categoria)}</small><br>${esc(p.nombre)}<b>${money(p.precio)}</b><small>Stock: ${p.stock}</small></button>`).join("");
-  document.querySelectorAll(".prod").forEach(b => b.onclick = () => agregar(+b.dataset.id));
+  $("#catalogo").innerHTML = productos.map(p => {
+    const nivel = p.stock <= 0 ? "cero" : p.stock <= p.stock_minimo ? "bajo" : "ok";
+    return `<button class="prod ${p.stock <= 0 ? "agotado" : ""}" data-id="${p.id}">
+       <small>${esc(p.categoria)}</small><span>${esc(p.nombre)}</span><b>${money(p.precio)}</b>
+       <small class="st ${nivel}">${p.stock <= 0 ? "Agotado" : "Quedan " + p.stock}</small></button>`;
+  }).join("") || `<p class="nota">No se encontraron productos.</p>`;
+  $$(".prod").forEach(b => b.onclick = () => agregar(+b.dataset.id));
 }
 $("#buscar").oninput = cargarCatalogo;
 $("#buscar").onkeydown = e => {  // Enter con código exacto (lector de barras)
@@ -45,30 +112,42 @@ $("#buscar").onkeydown = e => {  // Enter con código exacto (lector de barras)
 };
 function agregar(id) {
   const p = productos.find(p => p.id === id);
-  if ((carrito[id]?.cantidad || 0) + 1 > p.stock) return say($("#msg-venta"), "Sin stock suficiente", false);
+  if ((carrito[id]?.cantidad || 0) + 1 > p.stock) return say($("#msg-venta"), `No hay más existencias de ${p.nombre}.`, false);
   carrito[id] = {p, cantidad: (carrito[id]?.cantidad || 0) + 1, dev: carrito[id]?.dev || 0};
   say($("#msg-venta"), "", true); pintarCarrito();
 }
 const cascoLinea = l => l.p.retornable ? (l.cantidad - l.dev) * l.p.casco : 0;
 const cascoTotal = () => Object.values(carrito).reduce((s, l) => s + cascoLinea(l), 0);
 function total() { return Object.values(carrito).reduce((s, l) => s + l.p.precio * l.cantidad + cascoLinea(l), 0); }
+function actualizarCobrar() {
+  const b = $("#cobrar"), vacio = !Object.keys(carrito).length;
+  b.disabled = vacio || !turnoAbierto;
+  b.title = !turnoAbierto ? "Abre tu turno de caja para poder cobrar" : vacio ? "Agrega productos al ticket" : "";
+}
 function pintarCarrito() {
-  $("#carrito tbody").innerHTML = Object.entries(carrito).map(([id, l]) =>
-    `<tr><td>${esc(l.p.nombre)}${l.p.retornable ? `<br><small>Envases devueltos:
-         <input class="dev" type="number" min="0" max="${l.cantidad}" value="${l.dev}" data-dev="${id}"></small>` : ""}</td><td>
-       <button data-d="-1" data-id="${id}">−</button> ${l.cantidad} <button data-d="1" data-id="${id}">+</button></td>
-       <td>${money(l.p.precio * l.cantidad + cascoLinea(l))}</td></tr>`).join("");
-  document.querySelectorAll("#carrito [data-d]").forEach(b => b.onclick = () => {
+  const lineas = Object.entries(carrito);
+  $("#carrito tbody").innerHTML = lineas.map(([id, l]) =>
+    `<tr><td>${esc(l.p.nombre)}${l.p.retornable ? `<br><label class="nota">Envases vacíos que entrega:
+         <input class="dev" type="number" inputmode="numeric" min="0" max="${l.cantidad}" value="${l.dev}" data-dev="${id}"
+           aria-label="Envases vacíos que entrega el cliente de ${esc(l.p.nombre)}"></label>` : ""}</td>
+       <td><div class="cant"><button data-d="-1" data-id="${id}" aria-label="Quitar uno de ${esc(l.p.nombre)}">−</button>
+         <b>${l.cantidad}</b><button data-d="1" data-id="${id}" aria-label="Agregar uno de ${esc(l.p.nombre)}">+</button></div></td>
+       <td>${money(l.p.precio * l.cantidad + cascoLinea(l))}</td></tr>`).join("")
+    || `<tr class="vacio"><td colspan="3" class="nota">El ticket está vacío. Toca un producto para agregarlo.</td></tr>`;
+  $$("#carrito [data-d]").forEach(b => b.onclick = () => {
     const l = carrito[b.dataset.id], n = l.cantidad + +b.dataset.d;
     if (n > l.p.stock) return;
     if (n <= 0) delete carrito[b.dataset.id]; else { l.cantidad = n; l.dev = Math.min(l.dev, n); }
     pintarCarrito();
   });
-  document.querySelectorAll("[data-dev]").forEach(i => i.onchange = () => {
+  $$("[data-dev]").forEach(i => i.onchange = () => {
     const l = carrito[i.dataset.dev];
     l.dev = Math.max(0, Math.min(l.cantidad, parseInt(i.value) || 0)); setTimeout(pintarCarrito);
   });
-  $("#total").textContent = money(total()); $("#casco").textContent = money(cascoTotal()); cambio();
+  $("#total").textContent = money(total()); $("#casco").textContent = money(cascoTotal());
+  $("#barra-total").textContent = money(total());
+  $("#barra-n").textContent = lineas.reduce((s, [, l]) => s + l.cantidad, 0);
+  cambio(); actualizarCobrar();
 }
 function cambio() {
   const r = parseFloat($("#recibido").value);
@@ -80,10 +159,14 @@ $("#metodo").onchange = async () => {
   $("#lbl-cliente").hidden = !fiado; $("#lbl-recibido").hidden = fiado;
   if (fiado) {
     const cs = await api("/api/clientes");
-    $("#cliente").innerHTML = cs.map(c => `<option value="${c.id}">${esc(c.nombre)} (debe ${money(c.saldo)})</option>`).join("");
+    $("#cliente").innerHTML = cs.length
+      ? cs.map(c => `<option value="${c.id}">${esc(c.nombre)} (debe ${money(c.saldo)})</option>`).join("")
+      : `<option value="">Primero agrega un cliente en Fiado</option>`;
   }
 };
 $("#vaciar").onclick = () => { carrito = {}; pintarCarrito(); };
+$("#abrir-ticket").onclick = () => document.body.classList.add("ticket-abierto");
+$("#cerrar-ticket").onclick = () => document.body.classList.remove("ticket-abierto");
 $("#cobrar").onclick = async () => {
   const items = Object.entries(carrito).map(([id, l]) =>
     ({producto_id: +id, cantidad: l.cantidad, envases_devueltos: l.dev}));
@@ -93,7 +176,8 @@ $("#cobrar").onclick = async () => {
   try {
     const v = await api("/api/ventas", {body});
     say($("#msg-venta"), `Venta #${v.id} registrada. ` + (body.metodo === "fiado" ? "Cargada a fiado." : `Cambio: ${money(v.cambio)}`), true);
-    carrito = {}; $("#recibido").value = ""; pintarCarrito(); cargarCatalogo();
+    carrito = {}; $("#recibido").value = ""; document.body.classList.remove("ticket-abierto");
+    pintarCarrito(); cargarCatalogo();
   } catch (e) { say($("#msg-venta"), e.message, false); }
 };
 
@@ -104,29 +188,36 @@ async function cargarInventario() {
     `<tr><td>${esc(p.codigo)}</td><td>${esc(p.nombre)}</td><td>${esc(p.categoria)}</td>
      <td>${money(p.precio)}</td><td>${money(p.costo)}</td>
      <td class="${p.stock <= p.stock_minimo ? "bajo" : ""}">${p.stock}</td>
-     <td>${p.retornable ? `${p.vacios} / ${p.en_calle}<br>
-         <button data-dev-env="${p.id}">Devolución</button> <button data-canje="${p.id}">Canje</button>` : "—"}</td>
-     <td><input type="number" size="3" style="width:70px" placeholder="±" data-aj="${p.id}">
-         <button data-ok="${p.id}">OK</button></td>
-     <td><button data-del="${p.id}">🗑</button></td></tr>`).join("");
-  document.querySelectorAll("[data-ok]").forEach(b => b.onclick = async () => {
+     <td>${p.retornable ? `${p.vacios} / ${p.en_calle}
+         <button data-dev-env="${p.id}" data-nombre="${esc(p.nombre)}">Devolución</button>
+         <button data-canje="${p.id}" data-nombre="${esc(p.nombre)}">Canje</button>` : "—"}</td>
+     <td><input type="number" inputmode="numeric" step="1" style="width:90px" placeholder="±" data-aj="${p.id}"
+           aria-label="Ajustar existencias de ${esc(p.nombre)} (positivo suma, negativo resta)">
+         <button data-ok="${p.id}" aria-label="Aplicar ajuste a ${esc(p.nombre)}">Aplicar</button></td>
+     <td><button class="peligro" data-del="${p.id}" data-nombre="${esc(p.nombre)}" aria-label="Eliminar ${esc(p.nombre)}">🗑 Eliminar</button></td></tr>`).join("");
+  $$("[data-ok]").forEach(b => b.onclick = async () => {
     const cant = $(`[data-aj="${b.dataset.ok}"]`).value;
     try { await api(`/api/productos/${b.dataset.ok}/ajuste`, {body: {cantidad: cant}}); cargarInventario(); }
     catch (e) { say($("#msg-inv"), e.message, false); }
   });
-  const envase = (attr, ruta, texto) => document.querySelectorAll(`[${attr}]`).forEach(b => b.onclick = async () => {
-    const n = prompt(texto); if (!n) return;
+  const envase = (attr, ruta, titulo, etiqueta, boton, texto) => $$(`[${attr}]`).forEach(b => b.onclick = async () => {
+    const v = await dialogo({titulo, texto: `${b.dataset.nombre}. ${texto}`, boton,
+      campos: [{nombre: "cantidad", etiqueta, tipo: "number", step: "1", min: 1}]});
+    if (!v) return;
     try {
-      const r = await api(`/api/productos/${b.getAttribute(attr)}/${ruta}`, {body: {cantidad: n}});
-      say($("#msg-inv"), r.reembolso !== undefined ? `Reembolsa ${money(r.reembolso)} de casco` : "Canje registrado", true);
+      const r = await api(`/api/productos/${b.getAttribute(attr)}/${ruta}`, {body: {cantidad: v.cantidad}});
+      say($("#msg-inv"), r.reembolso !== undefined ? `Listo: reembolsa ${money(r.reembolso)} de casco.` : "Canje registrado.", true);
       cargarInventario();
     } catch (e) { say($("#msg-inv"), e.message, false); }
   });
-  envase("data-dev-env", "devolucion", "¿Cuántos envases vacíos regresa el cliente?");
-  envase("data-canje", "canje-proveedor", "¿Cuántos envases vacíos entregas al repartidor?");
-  document.querySelectorAll("[data-del]").forEach(b => b.onclick = async () => {
-    if (!confirm("¿Eliminar producto?")) return;
-    await api(`/api/productos/${b.dataset.del}`, {method: "DELETE", body: {}}); cargarInventario();
+  envase("data-dev-env", "devolucion", "Devolución de envases", "¿Cuántos envases vacíos regresa el cliente?", "Reembolsar casco",
+    "El cliente regresa envases vacíos y se le devuelve su casco.");
+  envase("data-canje", "canje-proveedor", "Canje con el proveedor", "¿Cuántos envases vacíos entregas al repartidor?", "Registrar canje",
+    "Entregas envases vacíos al repartidor y recibes llenos.");
+  $$("[data-del]").forEach(b => b.onclick = async () => {
+    if (!await confirmar("Eliminar producto", `¿Eliminar «${b.dataset.nombre}»? Dejará de aparecer en el catálogo; su historial de ventas se conserva.`, "Eliminar", true)) return;
+    try { await api(`/api/productos/${b.dataset.del}`, {method: "DELETE", body: {}}); cargarInventario(); }
+    catch (e) { say($("#msg-inv"), e.message, false); }
   });
 }
 $("#form-producto").onsubmit = async e => {
@@ -134,7 +225,7 @@ $("#form-producto").onsubmit = async e => {
   const body = Object.fromEntries(new FormData(e.target));
   body.retornable = e.target.retornable.checked;
   if (!body.categoria) delete body.categoria;
-  try { await api("/api/productos", {body}); e.target.reset(); say($("#msg-inv"), "Producto agregado", true); cargarInventario(); }
+  try { await api("/api/productos", {body}); e.target.reset(); say($("#msg-inv"), "Producto agregado.", true); cargarInventario(); }
   catch (err) { say($("#msg-inv"), err.message, false); }
 };
 
@@ -170,11 +261,14 @@ async function cargarClientes() {
   $("#t-clientes tbody").innerHTML = cs.map(c =>
     `<tr><td>${esc(c.nombre)}</td><td>${esc(c.telefono)}</td><td>${c.limite ? money(c.limite) : "—"}</td>
      <td class="${c.saldo ? "bajo" : ""}">${money(c.saldo)}</td>
-     <td>${c.saldo ? `<button data-abono="${c.id}">Abonar</button>` : ""}</td></tr>`).join("");
+     <td>${c.saldo ? `<button data-abono="${c.id}" data-nombre="${esc(c.nombre)}" data-saldo="${c.saldo}">Abonar</button>` : ""}</td></tr>`).join("");
   $("#por-cobrar").textContent = money(cs.reduce((s, c) => s + c.saldo, 0));
-  document.querySelectorAll("[data-abono]").forEach(b => b.onclick = async () => {
-    const m = prompt("Monto del abono ($)"); if (!m) return;
-    try { await api(`/api/clientes/${b.dataset.abono}/abono`, {body: {monto: m}}); cargarClientes(); }
+  $$("[data-abono]").forEach(b => b.onclick = async () => {
+    const v = await dialogo({titulo: "Registrar abono", boton: "Registrar abono",
+      texto: `${b.dataset.nombre} debe ${money(+b.dataset.saldo)}.`,
+      campos: [{nombre: "monto", etiqueta: "¿Cuánto abona? ($)", tipo: "number", step: "0.01", min: 0.01}]});
+    if (!v) return;
+    try { await api(`/api/clientes/${b.dataset.abono}/abono`, {body: {monto: v.monto}}); say($("#msg-cli"), "Abono registrado.", true); cargarClientes(); }
     catch (e) { say($("#msg-cli"), e.message, false); }
   });
 }
@@ -182,7 +276,7 @@ $("#form-cliente").onsubmit = async e => {
   e.preventDefault();
   try {
     await api("/api/clientes", {body: Object.fromEntries(new FormData(e.target))});
-    e.target.reset(); say($("#msg-cli"), "Cliente agregado", true); cargarClientes();
+    e.target.reset(); say($("#msg-cli"), "Cliente agregado.", true); cargarClientes();
   } catch (err) { say($("#msg-cli"), err.message, false); }
 };
 
@@ -191,8 +285,7 @@ async function cargarPedido() {
   const d = await api(`/api/sugerencia-pedido?historial=${$("#p-hist").value}&cobertura=${$("#p-cob").value}`);
   $("#t-pedido tbody").innerHTML = d.items.map(i =>
     `<tr><td>${esc(i.nombre)}</td><td class="${i.dias_de_stock !== null && i.dias_de_stock < 2 ? "bajo" : ""}">${i.stock}</td>
-     <td>${i.promedio_diario}</td><td>${i.dias_de_stock ?? "—"}</td><td><b>${i.pedir}</b></td><td>${money(i.costo_estimado)}</td></tr>`).join("")
-    || `<tr><td colspan="6">No hace falta pedir nada 🎉</td></tr>`;
+     <td>${i.promedio_diario}</td><td>${i.dias_de_stock ?? "—"}</td><td><b>${i.pedir}</b></td><td>${money(i.costo_estimado)}</td></tr>`).join("");
   $("#p-total").textContent = money(d.total_estimado);
 }
 $("#p-calc").onclick = cargarPedido;
@@ -207,6 +300,7 @@ async function mostrarLicencia(info) {
 async function revisarLicencia() {
   const info = await fetch("/api/licencia").then(r => r.json());
   if (!info.activa) return mostrarLicencia(info);
+  $("#licencia-overlay").hidden = true;
   $("#lic-badge").textContent = info.estado === "desarrollo" ? "Modo desarrollo (sin licencia)"
     : `Licencia ${info.tipo} · ${info.tienda}`;
   iniciarSesion();
@@ -217,12 +311,11 @@ $("#form-licencia").onsubmit = async e => {
     body: JSON.stringify({clave: e.target.clave.value})});
   const d = await r.json();
   if (!r.ok) return say($("#msg-lic"), d.error, false);
-  $("#licencia-overlay").hidden = true; e.target.reset(); say($("#msg-lic"), "", true);
-  revisarLicencia();
+  e.target.reset(); say($("#msg-lic"), "", true);
+  revisarLicencia();   // oculta esta pantalla por si sola y sigue con la cuenta del dueño
 };
 
 // ---- Caja (turnos) ----
-function irATab(nombre) { document.querySelector(`nav [data-tab=${nombre}]`).click(); }
 function difTexto(d) {
   if (d === null || d === undefined) return "—";
   if (d === 0) return `<span class="cuadra">Cuadra</span>`;
@@ -230,6 +323,7 @@ function difTexto(d) {
 }
 async function cargarCaja() {
   const t = await api("/api/turno");
+  turnoAbierto = t.abierto; $("#banner-turno").hidden = t.abierto; actualizarCobrar();
   $("#turno-cerrado").hidden = t.abierto; $("#turno-abierto").hidden = !t.abierto;
   if (t.abierto) {
     const r = t.turno.resumen, kpi = (n, v) => `<div><small>${n}</small><b>${v}</b></div>`;
@@ -246,10 +340,13 @@ async function cargarCaja() {
       `<tr><td>${esc(x.cajero)}</td><td>${esc(x.abierto)}</td><td>${esc(x.cerrado || "abierto")}</td><td>${money(x.fondo)}</td>
        <td>${x.cerrado ? money(x.esperado) : money(x.resumen.esperado)}</td><td>${x.cerrado ? money(x.contado) : "—"}</td>
        <td>${difTexto(x.diferencia)}</td>
-       <td>${x.cerrado ? "" : `<button data-cerrar-turno="${x.id}">Cerrar</button>`}</td></tr>`).join("");
-    document.querySelectorAll("[data-cerrar-turno]").forEach(b => b.onclick = async () => {
-      const c = prompt("Efectivo contado en esa caja ($)"); if (c === null || c === "") return;
-      try { await api(`/api/turnos/${b.dataset.cerrarTurno}/cerrar`, {body: {contado: c, notas: "Cerrado por el dueño"}}); cargarCaja(); }
+       <td>${x.cerrado ? "" : `<button data-cerrar-turno="${x.id}" data-cajero="${esc(x.cajero)}">Cerrar este turno</button>`}</td></tr>`).join("");
+    $$("[data-cerrar-turno]").forEach(b => b.onclick = async () => {
+      const v = await dialogo({titulo: "Cerrar el turno de " + b.dataset.cajero, boton: "Cerrar turno",
+        texto: "Cuenta el efectivo que hay en esa caja y escríbelo.",
+        campos: [{nombre: "contado", etiqueta: "Efectivo contado ($)", tipo: "number", step: "0.01", min: 0}]});
+      if (!v) return;
+      try { await api(`/api/turnos/${b.dataset.cerrarTurno}/cerrar`, {body: {contado: v.contado, notas: "Cerrado por el dueño"}}); cargarCaja(); }
       catch (e) { say($("#msg-caja"), e.message, false); }
     });
   }
@@ -261,12 +358,12 @@ $("#form-abrir").onsubmit = async e => {
 };
 $("#form-mov").onsubmit = async e => {
   e.preventDefault();
-  try { await api("/api/turno/movimiento", {body: Object.fromEntries(new FormData(e.target))}); e.target.reset(); say($("#msg-caja"), "Movimiento registrado", true); cargarCaja(); }
+  try { await api("/api/turno/movimiento", {body: Object.fromEntries(new FormData(e.target))}); e.target.reset(); say($("#msg-caja"), "Movimiento registrado.", true); cargarCaja(); }
   catch (err) { say($("#msg-caja"), err.message, false); }
 };
 $("#form-cerrar").onsubmit = async e => {
   e.preventDefault();
-  if (!confirm("¿Cerrar el turno? Ya no podrás cobrar hasta abrir otro.")) return;
+  if (!await confirmar("Cerrar turno", "Ya no podrás cobrar hasta abrir otro turno. ¿Cerrarlo?", "Cerrar turno")) return;
   try {
     const d = await api("/api/turno/cerrar", {body: Object.fromEntries(new FormData(e.target))});
     e.target.reset(); cargarCaja();
@@ -275,12 +372,37 @@ $("#form-cerrar").onsubmit = async e => {
   } catch (err) { say($("#msg-caja"), err.message, false); }
 };
 
+// ---- Respaldos ----
+const MOTIVOS = {inicio: "Al abrir el sistema", auto: "Automático", "cierre-turno": "Al cerrar un turno", "al-cerrar": "Al cerrar el sistema",
+  manual: "Manual", "antes-de-restaurar": "Antes de restaurar", antiguo: "De una versión anterior"};
+async function cargarRespaldos() {
+  const rs = await api("/api/respaldos");
+  $("#t-respaldos tbody").innerHTML = rs.map(r =>
+    `<tr><td>${esc(r.fecha)}</td><td>${esc(MOTIVOS[r.motivo] || r.motivo || "—")}</td><td>${(r.bytes / 1024).toFixed(0)} KB</td>
+     <td><button data-restaurar="${esc(r.archivo)}" data-fecha="${esc(r.fecha)}">Restaurar</button></td></tr>`).join("");
+  $$("[data-restaurar]").forEach(b => b.onclick = async () => {
+    if (!await confirmar("Restaurar este respaldo",
+        `Vas a reemplazar TODOS los datos actuales (ventas, productos, clientes, usuarios y turnos) por los que había el ${b.dataset.fecha}. ` +
+        `Lo que hiciste después de esa fecha se perderá, aunque antes se guarda una copia de lo actual. ¿Continuar?`, "Sí, restaurar", true)) return;
+    try {
+      await api("/api/respaldos/restaurar", {body: {archivo: b.dataset.restaurar}});
+      await dialogo({titulo: "Respaldo restaurado", texto: "Listo. Se volverá a cargar el sistema.", boton: "Aceptar"});
+      location.reload();
+    } catch (e) { say($("#msg-resp"), e.message, false); }
+  });
+}
+$("#respaldar-ahora").onclick = async () => {
+  try { await api("/api/respaldos", {body: {}}); say($("#msg-resp"), "Respaldo creado.", true); cargarRespaldos(); }
+  catch (e) { say($("#msg-resp"), e.message, false); }
+};
+
 // ---- Sesion y usuarios ----
 let modoAuth = "login";
 function mostrarAuth(configurado) {
   const setup = configurado === false;
   modoAuth = setup ? "setup" : "login";
-  $("#form-auth [name=nombre]").hidden = !setup;
+  document.body.classList.add("sin-sesion");
+  $("#lbl-auth-nombre").hidden = !setup;
   $("#form-auth [name=nombre]").required = setup;
   $("#form-auth [name=password]").autocomplete = setup ? "new-password" : "current-password";
   $("#auth-titulo").textContent = setup ? "Bienvenido: crea la cuenta del dueño" : "Iniciar sesión";
@@ -290,12 +412,13 @@ function mostrarAuth(configurado) {
 }
 function aplicarUsuario(u) {
   document.body.dataset.rol = u.rol;
+  document.body.classList.remove("sin-sesion");
   $("#usuario-actual").textContent = `${u.nombre} (${u.rol === "dueno" ? "dueño" : "cajero"})`;
   $("#auth-overlay").hidden = true;
-  document.querySelectorAll("nav button, .tab").forEach(e => e.classList.remove("active"));
-  document.querySelector('nav [data-tab=venta]').classList.add("active"); $("#venta").classList.add("active");
-  carrito = {}; pintarCarrito(); cargarCatalogo();
-  fetch("/api/turno").then(r => r.json()).then(t => { if (!t.abierto) irATab("caja"); });
+  $$("nav button, .tab").forEach(e => e.classList.remove("active"));
+  $('nav [data-tab=venta]').classList.add("active"); $("#venta").classList.add("active");
+  carrito = {}; pintarCarrito(); cargarCatalogo(); mostrarGuia();
+  refrescarTurno().then(t => { if (t && !t.abierto) irATab("caja"); });
 }
 async function iniciarSesion() {
   const yo = await fetch("/api/auth/yo").then(r => r.json());
@@ -313,38 +436,45 @@ $("#form-auth").onsubmit = async e => {
 };
 $("#btn-salir").onclick = async () => { await fetch("/api/auth/logout", {method: "POST"}); location.reload(); };
 $("#btn-password").onclick = async () => {
-  const actual = prompt("Contraseña actual"); if (!actual) return;
-  const nueva = prompt("Contraseña nueva (mínimo 6 caracteres)"); if (!nueva) return;
-  try { await api("/api/auth/password", {body: {actual, nueva}}); alert("Contraseña actualizada"); }
-  catch (e) { alert(e.message); }
+  const v = await dialogo({titulo: "Cambiar mi contraseña", boton: "Cambiar contraseña", campos: [
+    {nombre: "actual", etiqueta: "Contraseña actual", tipo: "password"},
+    {nombre: "nueva", etiqueta: "Contraseña nueva (mínimo 6 caracteres)", tipo: "password"}]});
+  if (!v) return;
+  try { await api("/api/auth/password", {body: v}); await dialogo({titulo: "Listo", texto: "Tu contraseña se actualizó.", boton: "Aceptar"}); }
+  catch (e) { await dialogo({titulo: "No se pudo cambiar", texto: e.message, boton: "Aceptar"}); }
 };
 async function cargarUsuarios() {
   const us = await api("/api/usuarios");
   $("#t-usuarios tbody").innerHTML = us.map(u =>
     `<tr><td>${esc(u.nombre)}</td><td>${esc(u.usuario)}</td><td>${u.rol === "dueno" ? "Dueño" : "Cajero"}</td>
      <td>${u.activo ? "Activo" : "<span class='bajo'>Desactivado</span>"}</td>
-     <td><button data-pw="${u.id}">Nueva contraseña</button>
+     <td><button data-pw="${u.id}" data-nombre="${esc(u.nombre)}">Nueva contraseña</button>
          <button data-act="${u.id}" data-val="${u.activo ? 0 : 1}">${u.activo ? "Desactivar" : "Activar"}</button></td></tr>`).join("");
   const editar = async (id, body) => {
     try { await api(`/api/usuarios/${id}`, {method: "PUT", body}); cargarUsuarios(); }
     catch (e) { say($("#msg-usr"), e.message, false); }
   };
-  document.querySelectorAll("[data-pw]").forEach(b => b.onclick = () => {
-    const p = prompt("Nueva contraseña (mínimo 6 caracteres)"); if (p) editar(b.dataset.pw, {password: p});
+  $$("[data-pw]").forEach(b => b.onclick = async () => {
+    const v = await dialogo({titulo: "Nueva contraseña para " + b.dataset.nombre, boton: "Guardar contraseña",
+      texto: "Si esa persona tiene una sesión abierta, se cerrará.",
+      campos: [{nombre: "password", etiqueta: "Contraseña nueva (mínimo 6 caracteres)", tipo: "password"}]});
+    if (v) editar(b.dataset.pw, {password: v.password});
   });
-  document.querySelectorAll("[data-act]").forEach(b => b.onclick = () => editar(b.dataset.act, {activo: b.dataset.val === "1"}));
+  $$("[data-act]").forEach(b => b.onclick = () => editar(b.dataset.act, {activo: b.dataset.val === "1"}));
   const red = await api("/api/red");
   $("#acceso-red").innerHTML = red.urls.length
-    ? `<p>Abre una de estas direcciones en el navegador de la tablet (mismo Wi-Fi):</p>` +
+    ? `<p class="aviso">⚠ <b>El acceso desde tablet o celular está ACTIVADO.</b> Cualquier dispositivo de tu red Wi-Fi puede abrir
+       la pantalla de inicio de sesión. Usa una red privada con contraseña.</p>
+       <p>Abre una de estas direcciones en el navegador de la tablet (mismo Wi-Fi):</p>` +
       red.urls.map(u => `<div class="url">${esc(u)}</div>`).join("")
-    : `<p>El acceso desde otros dispositivos está apagado. Abre el programa con el acceso directo
-       <b>"Punto de Venta (con acceso desde tablet)"</b> para activarlo.</p>`;
+    : `<p>El acceso desde otros dispositivos está <b>apagado</b>. Para activarlo, abre la ventanita del programa en la computadora
+       y marca <b>«Permitir usar el sistema desde una tablet o celular»</b>.</p>`;
 }
 $("#form-usuario").onsubmit = async e => {
   e.preventDefault();
   try {
     await api("/api/usuarios", {body: Object.fromEntries(new FormData(e.target))});
-    e.target.reset(); say($("#msg-usr"), "Usuario agregado", true); cargarUsuarios();
+    e.target.reset(); say($("#msg-usr"), "Usuario agregado.", true); cargarUsuarios();
   } catch (err) { say($("#msg-usr"), err.message, false); }
 };
 

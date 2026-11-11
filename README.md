@@ -64,13 +64,17 @@ La licencia también se valida sin conexión.
    **Abrir el sistema** y se abre el navegador solo.
 3. La primera vez pide activar la licencia (el ID de instalación se muestra en pantalla) y crear la cuenta del dueño.
 
-La ventanita también permite **usar el sistema desde una tablet o celular** (casilla + dirección que se escribe en la tablet),
+La ventanita muestra siempre si el **acceso desde tablet o celular** está activado y permite cambiarlo (casilla + dirección que se escribe en la tablet).
+Instalar o reinstalar lo deja **apagado**; se enciende solo a propósito. También permite
 abrir la carpeta de respaldos y cerrar el sistema. Si se hace doble clic otra vez con el sistema abierto, solo se
 vuelve a abrir el navegador (nunca queda una segunda copia). Actualizar = ejecutar el instalador nuevo encima.
 
 - Los datos viven en `%APPDATA%\PuntoVentaAbarrotes\` (base de datos, `respaldos\`, `logs\pos.log`, `config.json`),
-  fuera de la carpeta del programa: actualizar o desinstalar **no** los borra. Cada día que se abre el sistema se
-  guarda una copia (se conservan las últimas 14). Pide al cliente copiar `respaldos` a una USB de vez en cuando.
+  fuera de la carpeta del programa: actualizar o desinstalar **no** los borra.
+- **Respaldos** (`respaldos\`): se hacen solos al abrir el sistema, cada 4 horas, **al cerrar cada turno** y al cerrar el
+  sistema, y a mano con «Respaldar ahora». Se conserva todo lo de las últimas 24 h y el último de cada día del último mes.
+  El dueño los ve y **restaura** desde la pestaña *Respaldos* (antes de restaurar se guarda una copia de lo actual).
+  Pide al cliente copiar `respaldos` a una USB de vez en cuando.
 - Si algo falla al arrancar, aparece un aviso y el detalle técnico queda en `logs\pos.log`.
 - La versión instalada **siempre exige licencia** y necesita `pos/clave_publica.pem` al compilar.
 

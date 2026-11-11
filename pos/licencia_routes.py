@@ -76,7 +76,7 @@ def activar_licencia():
         clave, llave, instalacion_id(), current_app.config["FECHA_VERSION"]
     )
     if estado != lic.ACTIVA:
-        return jsonify(error=lic.MENSAJES.get(estado, "Licencia no valida"), estado=estado), 400
+        return jsonify(error=lic.MENSAJES.get(estado, "Licencia no válida"), estado=estado), 400
     db = get_db()
     db.execute(
         "INSERT INTO licencia (id,clave) VALUES (1,?)"
@@ -95,4 +95,4 @@ def exigir_licencia():
     estado, payload = estado_actual()
     if estado in (lic.ACTIVA, lic.DESARROLLO):
         return None
-    return jsonify(error=lic.MENSAJES.get(estado, "Licencia no valida"), estado=estado), 402
+    return jsonify(error=lic.MENSAJES.get(estado, "Licencia no válida"), estado=estado), 402

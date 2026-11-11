@@ -6,6 +6,7 @@ Si ya estaba abierto, solo vuelve a abrir el navegador (nunca levanta dos copias
 Opciones (solo para soporte tecnico):
   --lan          permitir acceso desde tablets/celulares (tambien se activa desde la ventana)
   --sin-ventana  modo consola, sin ventana (servidores, pruebas)
+  --apagar-tablet  desactiva el acceso desde tablets/celulares y termina (lo usa el instalador)
   POS_PORT       puerto preferido (por defecto 5000)
   POS_NO_BROWSER=1  no abrir el navegador
 """
@@ -27,6 +28,7 @@ from pos import config, create_app, paths
 from pos.respaldos import respaldar_seguro
 
 PUERTO_INICIAL = 5000
+INTERVALO_RESPALDO_HORAS = 4
 
 
 def puerto_libre(host, inicial):
@@ -158,7 +160,11 @@ def main(argv=None):
     ap = argparse.ArgumentParser(description="Punto de Venta")
     ap.add_argument("--lan", action="store_true", help="permitir acceso desde otros dispositivos de la red")
     ap.add_argument("--sin-ventana", action="store_true", help="modo consola, sin ventana")
+    ap.add_argument("--apagar-tablet", action="store_true", help="desactiva el acceso desde tablets y termina")
     args = ap.parse_args(argv)
+    if args.apagar_tablet:   # el instalador lo ejecuta: una instalacion nueva nunca queda visible en la red sin avisar
+        config.guardar({**config.cargar(), "lan": False})
+        return 0
     registro = configurar_salida()
     abrir = os.environ.get("POS_NO_BROWSER") != "1"
 
@@ -169,7 +175,16 @@ def main(argv=None):
         return 0
     try:
         app = create_app()
-        respaldar_seguro(app.config["DATABASE"], os.path.join(paths.datos_dir(), "respaldos"))
+        db_path, carpeta = app.config["DATABASE"], app.config["RESPALDOS_DIR"]
+        respaldar_seguro(db_path, carpeta, "inicio")
+        parar_respaldos = threading.Event()
+        horas = float(os.environ.get("POS_RESPALDO_HORAS", INTERVALO_RESPALDO_HORAS))
+
+        def respaldos_periodicos():   # ademas de abrir y cerrar turno: asi nunca se pierde mas de unas horas
+            while not parar_respaldos.wait(horas * 3600):
+                respaldar_seguro(db_path, carpeta, "auto")
+
+        threading.Thread(target=respaldos_periodicos, daemon=True).start()
         cfg = config.cargar()
         srv = Servidor(app, lan=args.lan or cfg["lan"], puerto_inicial=int(os.environ.get("POS_PORT", PUERTO_INICIAL)))
         srv.iniciar()
@@ -180,8 +195,9 @@ def main(argv=None):
         if not args.sin_ventana:
             try:
                 import ventana
-                ventana.correr(srv, navegador, os.path.join(paths.datos_dir(), "respaldos"),
-                               lambda v: config.guardar({**cfg, "lan": v}))
+                ventana.correr(srv, navegador, carpeta, lambda v: config.guardar({**cfg, "lan": v}))
+                parar_respaldos.set()
+                respaldar_seguro(db_path, carpeta, "al-cerrar")
                 return 0
             except ImportError:  # esta instalacion de Python no trae tkinter
                 logging.warning("Sin tkinter: modo consola")
@@ -190,6 +206,8 @@ def main(argv=None):
                     raise
                 logging.warning("Sin pantalla: modo consola")
         bucle_consola(srv)
+        parar_respaldos.set()
+        respaldar_seguro(db_path, carpeta, "al-cerrar")
         return 0
     except Exception:
         logging.exception("El sistema no pudo arrancar")

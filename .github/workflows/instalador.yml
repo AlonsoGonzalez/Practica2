@@ -95,11 +95,30 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit 1 }
           $datos = Join-Path $env:APPDATA "PuntoVentaAbarrotes"
           if (-not (Test-Path "$datos\pos.db")) { throw "No se creo la base de datos en $datos" }
+          # el cierre de turno de la prueba de humo debe haber dejado un respaldo con las ventas
+          if (-not (Get-ChildItem "$datos\respaldos" -Filter "pos-*-cierre-turno.db" -ErrorAction SilentlyContinue)) { throw "No hay respaldo del cierre de turno en $datos\respaldos" }
+          Write-Host "OK: el cierre de turno genero su respaldo"
+
+          # la opcion de tablet NO debe sobrevivir a una reinstalacion: se marca a mano y se reinstala encima
+          '{"lan": true}' | Set-Content -Path "$datos\config.json" -Encoding utf8
+          Start-Process -FilePath $setup -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART","/DIR=$dir" -Wait
+          if ((Get-Content "$datos\config.json" -Raw) -match '"lan"\s*:\s*true') { throw "La reinstalacion dejo la tablet activada" }
+          if (-not (Test-Path "$datos\pos.db")) { throw "Reinstalar borro los datos de la tienda" }
+          Write-Host "OK: reinstalar apaga la tablet y conserva los datos"
+
+          # el desinstalador debe cerrar el programa si esta abierto
+          $env:POS_NO_BROWSER = "1"
+          $app = Start-Process -FilePath "$dir\PuntoDeVenta.exe" -ArgumentList "--sin-ventana" -PassThru
+          $vivo = $false
+          foreach ($i in 1..40) { try { Invoke-RestMethod "http://127.0.0.1:5000/api/ping" -TimeoutSec 2 | Out-Null; $vivo = $true; break } catch { Start-Sleep -Milliseconds 500 } }
+          if (-not $vivo) { throw "El programa instalado no respondio antes de desinstalar" }
           Start-Process -FilePath "$dir\unins000.exe" -ArgumentList "/VERYSILENT","/SUPPRESSMSGBOXES","/NORESTART" -Wait
           Start-Sleep -Seconds 3
+          if (Get-Process -Id $app.Id -ErrorAction SilentlyContinue) { throw "El desinstalador dejo el programa corriendo" }
+          try { Invoke-RestMethod "http://127.0.0.1:5000/api/ping" -TimeoutSec 2 | Out-Null; throw "El puerto 5000 sigue abierto tras desinstalar" } catch { if ($_.Exception.Message -like "*sigue abierto*") { throw } }
           if (Test-Path "$dir\PuntoDeVenta.exe") { throw "El desinstalador no quito el programa" }
           if (-not (Test-Path "$datos\pos.db")) { throw "Desinstalar borro los datos de la tienda" }
-          Write-Host "OK: instala, funciona, desinstala y conserva los datos"
+          Write-Host "OK: desinstalar cierra el programa, lo quita y conserva los datos"
 
       - name: Licencia temporal para probar el instalador de PRUEBA
         if: steps.llave.outputs.prueba == 'true'
@@ -108,7 +127,7 @@ jobs:
           # Solo sirve con ESTE instalador (su llave publica de prueba es unica y su privada se descarta).
           python tools/licencias.py emitir --privada llaves-prueba/privada.pem --tienda "PRUEBA - no es una venta real" \
             --tipo prueba --expira "$(date -d '+30 days' +%F)" > salida/LICENCIA-DE-PRUEBA.txt
-          printf '\nPega esta clave en la pantalla "Activar licencia" del instalador de prueba.\nEs valida 30 dias y SOLO con este instalador.\n' >> salida/LICENCIA-DE-PRUEBA.txt
+          printf '\nPega esta clave en la pantalla "Activar licencia" del instalador de prueba.\nEs valida 30 dias y solo funciona con ESTE instalador de prueba (no con una version real). No esta ligada al ID de instalacion: sirve en cualquier equipo donde instales este paquete de prueba.\n' >> salida/LICENCIA-DE-PRUEBA.txt
           cat salida/LICENCIA-DE-PRUEBA.txt | head -c 120; echo
 
       - name: Resumen de las pruebas automaticas en Windows

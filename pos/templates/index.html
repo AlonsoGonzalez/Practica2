@@ -4,34 +4,51 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Punto de Venta - Abarrotes</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 64 64'%3E%3Crect width='64' height='64' rx='14' fill='%23d8001d'/%3E%3Ctext x='32' y='45' font-size='36' text-anchor='middle'%3E%F0%9F%9B%92%3C/text%3E%3C/svg%3E">
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
-<body>
-<div id="auth-overlay" class="overlay" hidden>
+<body class="sin-sesion">
+
+<div id="auth-overlay" class="overlay opaco" hidden>
   <form id="form-auth">
     <h2 id="auth-titulo">Iniciar sesión</h2>
     <p id="auth-ayuda"></p>
-    <input name="nombre" placeholder="Tu nombre" hidden>
-    <input name="usuario" placeholder="Usuario" autocomplete="username" required>
-    <input name="password" type="password" placeholder="Contraseña" autocomplete="current-password" required>
+    <label class="campo" id="lbl-auth-nombre" hidden><span>Tu nombre</span><input name="nombre" autocomplete="name"></label>
+    <label class="campo"><span>Usuario</span><input name="usuario" autocomplete="username" required></label>
+    <label class="campo"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" required></label>
     <button class="primario" id="auth-boton">Entrar</button>
-    <div id="msg-auth" class="msg"></div>
+    <div id="msg-auth" class="msg" role="alert"></div>
   </form>
 </div>
-<div id="licencia-overlay" class="overlay" hidden>
+
+<div id="licencia-overlay" class="overlay opaco" hidden>
   <form id="form-licencia">
     <h2>Activar licencia</h2>
     <p id="lic-mensaje"></p>
     <p>ID de esta instalación (envíalo al proveedor para recibir tu clave):</p>
     <code id="lic-instalacion"></code>
-    <textarea name="clave" rows="4" placeholder="Pega aquí tu clave POS1.…" required></textarea>
+    <label class="campo"><span>Clave de licencia</span>
+      <textarea name="clave" rows="4" placeholder="POS1.…" required></textarea></label>
     <button class="primario">Activar</button>
-    <div id="msg-lic" class="msg"></div>
+    <div id="msg-lic" class="msg" role="alert"></div>
   </form>
 </div>
+
+<dialog id="dlg">
+  <form id="dlg-form" method="dialog">
+    <h3 id="dlg-titulo"></h3>
+    <p id="dlg-texto"></p>
+    <div id="dlg-campos"></div>
+    <div class="botones">
+      <button type="button" id="dlg-cancelar">Cancelar</button>
+      <button class="primario" id="dlg-ok">Aceptar</button>
+    </div>
+  </form>
+</dialog>
+
 <header>
-  <h1>🛒 Abarrotes · Punto de Venta</h1>
-  <nav>
+  <h1><span class="logo">🛒</span> Punto de Venta</h1>
+  <nav aria-label="Secciones">
     <button data-tab="venta" class="active">Venta</button>
     <button data-tab="inventario" data-solo-dueno>Inventario</button>
     <button data-tab="caja">Caja</button>
@@ -39,6 +56,7 @@
     <button data-tab="pedido" data-solo-dueno>Pedido</button>
     <button data-tab="corte" data-solo-dueno>Corte de caja</button>
     <button data-tab="usuarios" data-solo-dueno>Usuarios</button>
+    <button data-tab="respaldos" data-solo-dueno>Respaldos</button>
   </nav>
   <div class="sesion">
     <small id="lic-badge"></small>
@@ -50,43 +68,69 @@
 
 <main>
 <section id="venta" class="tab active">
-  <div class="col">
-    <input id="buscar" placeholder="Buscar o escanear código de barras…" autofocus>
-    <div id="catalogo" class="grid"></div>
+  <div id="banner-turno" class="aviso" hidden>
+    <span>🔒 <b>Tu turno de caja está cerrado.</b> No se puede cobrar hasta que lo abras.</span>
+    <button id="ir-a-caja" class="primario">Abrir turno</button>
   </div>
-  <aside class="col carrito">
-    <h2>Ticket</h2>
-    <table id="carrito"><tbody></tbody></table>
-    <div class="total">Total: <span id="total">$0.00</span></div>
-    <label>Pago
-      <select id="metodo"><option value="efectivo">Efectivo</option><option value="fiado">Fiado</option></select>
-    </label>
-    <label id="lbl-cliente" hidden>Cliente <select id="cliente"></select></label>
-    <div class="cascos">Casco: <span id="casco">$0.00</span></div>
-    <label id="lbl-recibido">Recibido <input id="recibido" type="number" step="0.5" min="0"></label>
-    <div class="cambio">Cambio: <span id="cambio">$0.00</span></div>
-    <button id="cobrar" class="primario">Cobrar</button>
-    <button id="vaciar">Vaciar</button>
-    <div id="msg-venta" class="msg"></div>
-  </aside>
+  <div id="primeros-pasos" class="guia" hidden data-solo-dueno>
+    <h3>Primeros pasos</h3>
+    <ol>
+      <li id="paso-turno">Abre tu turno de caja con el efectivo con el que empiezas. <button data-ir="caja">Ir a Caja</button></li>
+      <li>Revisa tus productos: los de ejemplo traen <b>precios inventados</b>. <button data-ir="inventario">Ir a Inventario</button></li>
+      <li>Crea una cuenta para cada cajero. <button data-ir="usuarios">Ir a Usuarios</button></li>
+      <li>Los respaldos se hacen solos; aquí puedes ver y restaurar. <button data-ir="respaldos">Ir a Respaldos</button></li>
+    </ol>
+    <button id="ocultar-pasos">Entendido, ocultar esta guía</button>
+  </div>
+
+  <div class="venta-layout">
+    <div class="col">
+      <label class="campo buscar"><span>Buscar producto o escanear código de barras</span>
+        <input id="buscar" autofocus autocomplete="off" placeholder="Escribe el nombre o escanea…"></label>
+      <div id="catalogo" class="grid"></div>
+    </div>
+    <aside class="col carrito" id="ticket" aria-label="Ticket">
+      <div class="ticket-cab">
+        <h2>Ticket</h2>
+        <button id="cerrar-ticket" class="mini solo-movil" aria-label="Cerrar el ticket">✕ Seguir agregando</button>
+      </div>
+      <table id="carrito" data-vacio="El ticket está vacío. Toca un producto para agregarlo."><tbody></tbody></table>
+      <div class="total">Total: <span id="total">$0.00</span></div>
+      <label class="campo"><span>Forma de pago</span>
+        <select id="metodo"><option value="efectivo">Efectivo</option><option value="fiado">Fiado</option></select>
+      </label>
+      <label class="campo" id="lbl-cliente" hidden><span>Cliente</span><select id="cliente"></select></label>
+      <div class="cascos">Casco (depósito de envases): <span id="casco">$0.00</span></div>
+      <label class="campo" id="lbl-recibido"><span>Dinero recibido</span>
+        <input id="recibido" type="number" inputmode="decimal" step="0.5" min="0"></label>
+      <div class="cambio">Cambio: <span id="cambio">$0.00</span></div>
+      <button id="cobrar" class="primario grande">Cobrar</button>
+      <button id="vaciar">Vaciar ticket</button>
+      <div id="msg-venta" class="msg" role="status"></div>
+    </aside>
+  </div>
+  <div id="barra-ticket" class="solo-movil">
+    <span><b id="barra-n">0</b> artículos · <b id="barra-total">$0.00</b></span>
+    <button id="abrir-ticket" class="primario">Ver ticket y cobrar</button>
+  </div>
 </section>
 
 <section id="inventario" class="tab">
   <h2>Inventario</h2>
   <form id="form-producto" class="fila">
-    <input name="codigo" placeholder="Código" required>
-    <input name="nombre" placeholder="Nombre" required>
-    <input name="categoria" placeholder="Categoría">
-    <input name="precio" type="number" step="0.01" min="0" placeholder="Precio" required>
-    <input name="costo" type="number" step="0.01" min="0" placeholder="Costo">
-    <input name="stock" type="number" min="0" placeholder="Stock">
-    <label><input name="retornable" type="checkbox"> Retornable</label>
-    <input name="casco" type="number" step="0.01" min="0" placeholder="Casco $">
-    <button class="primario">Agregar</button>
+    <label class="campo"><span>Código de barras</span><input name="codigo" required></label>
+    <label class="campo"><span>Nombre del producto</span><input name="nombre" required></label>
+    <label class="campo"><span>Categoría</span><input name="categoria" placeholder="General"></label>
+    <label class="campo"><span>Precio de venta ($)</span><input name="precio" type="number" inputmode="decimal" step="0.01" min="0" required></label>
+    <label class="campo"><span>Costo ($)</span><input name="costo" type="number" inputmode="decimal" step="0.01" min="0"></label>
+    <label class="campo"><span>Existencias</span><input name="stock" type="number" inputmode="numeric" step="1" min="0"></label>
+    <label class="campo check"><input name="retornable" type="checkbox"><span>Envase retornable</span></label>
+    <label class="campo"><span>Casco por envase ($)</span><input name="casco" type="number" inputmode="decimal" step="0.01" min="0"></label>
+    <button class="primario">Agregar producto</button>
   </form>
-  <div id="msg-inv" class="msg"></div>
-  <table id="tabla-inv">
-    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Costo</th><th>Stock</th><th>Envases (vacíos / en calle)</th><th>Ajustar</th><th></th></tr></thead>
+  <div id="msg-inv" class="msg" role="status"></div>
+  <table id="tabla-inv" data-vacio="Todavía no hay productos.">
+    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Costo</th><th>Existencias</th><th>Envases (vacíos / en calle)</th><th>Ajustar existencias</th><th>Acciones</th></tr></thead>
     <tbody></tbody>
   </table>
 </section>
@@ -94,33 +138,33 @@
 <section id="clientes" class="tab">
   <h2>Fiado</h2>
   <form id="form-cliente" class="fila">
-    <input name="nombre" placeholder="Nombre" required>
-    <input name="telefono" placeholder="Teléfono">
-    <input name="limite" type="number" step="1" min="0" placeholder="Límite de crédito (0 = sin límite)">
+    <label class="campo"><span>Nombre del cliente</span><input name="nombre" required></label>
+    <label class="campo"><span>Teléfono</span><input name="telefono" type="tel" inputmode="tel"></label>
+    <label class="campo"><span>Límite de crédito ($, vacío = sin límite)</span><input name="limite" type="number" inputmode="decimal" step="1" min="0"></label>
     <button class="primario">Agregar cliente</button>
   </form>
-  <div id="msg-cli" class="msg"></div>
-  <table id="t-clientes"><thead><tr><th>Cliente</th><th>Teléfono</th><th>Límite</th><th>Debe</th><th></th></tr></thead><tbody></tbody></table>
+  <div id="msg-cli" class="msg" role="status"></div>
+  <table id="t-clientes" data-vacio="Todavía no hay clientes a fiado."><thead><tr><th>Cliente</th><th>Teléfono</th><th>Límite</th><th>Debe</th><th>Acciones</th></tr></thead><tbody></tbody></table>
   <p><b>Total por cobrar:</b> <span id="por-cobrar">$0.00</span></p>
 </section>
 
 <section id="pedido" class="tab">
   <h2>Sugerencia de pedido</h2>
   <div class="fila">
-    <label>Vendido en los últimos <input id="p-hist" type="number" min="1" value="14" style="width:70px"> días</label>
-    <label>Cubrir <input id="p-cob" type="number" min="1" value="7" style="width:70px"> días</label>
+    <label class="campo"><span>Mirar lo vendido en los últimos (días)</span><input id="p-hist" type="number" inputmode="numeric" min="1" value="14"></label>
+    <label class="campo"><span>Surtir para cubrir (días)</span><input id="p-cob" type="number" inputmode="numeric" min="1" value="7"></label>
     <button id="p-calc" class="primario">Calcular</button>
   </div>
-  <table id="t-pedido"><thead><tr><th>Producto</th><th>Stock</th><th>Venta/día</th><th>Días de stock</th><th>Pedir</th><th>Costo est.</th></tr></thead><tbody></tbody></table>
+  <table id="t-pedido" data-vacio="No hace falta pedir nada por ahora 🎉"><thead><tr><th>Producto</th><th>Existencias</th><th>Venta por día</th><th>Días de existencias</th><th>Pedir</th><th>Costo estimado</th></tr></thead><tbody></tbody></table>
   <p><b>Total estimado:</b> <span id="p-total">$0.00</span></p>
 </section>
 
 <section id="caja" class="tab">
   <h2>Turno de caja</h2>
   <div id="turno-cerrado" hidden>
-    <p>No tienes un turno abierto. Cuenta el efectivo con el que inicias y ábrelo para poder cobrar.</p>
+    <p>No tienes un turno abierto. Cuenta el efectivo con el que empiezas y ábrelo para poder cobrar.</p>
     <form id="form-abrir" class="fila">
-      <input name="fondo" type="number" step="0.01" min="0" placeholder="Fondo inicial $" required>
+      <label class="campo"><span>Fondo inicial en la caja ($)</span><input name="fondo" type="number" inputmode="decimal" step="0.01" min="0" required></label>
       <button class="primario">Abrir turno</button>
     </form>
   </div>
@@ -128,23 +172,23 @@
     <div class="kpis" id="turno-kpis"></div>
     <h3>Retiros e ingresos de efectivo</h3>
     <form id="form-mov" class="fila">
-      <select name="tipo"><option value="retiro">Retiro</option><option value="ingreso">Ingreso</option></select>
-      <input name="monto" type="number" step="0.01" min="0.01" placeholder="Monto $" required>
-      <input name="motivo" placeholder="Motivo (pago a proveedor, cambio…)" required>
-      <button>Registrar</button>
+      <label class="campo"><span>Tipo</span><select name="tipo"><option value="retiro">Retiro</option><option value="ingreso">Ingreso</option></select></label>
+      <label class="campo"><span>Monto ($)</span><input name="monto" type="number" inputmode="decimal" step="0.01" min="0.01" required></label>
+      <label class="campo"><span>Motivo (pago a proveedor, cambio…)</span><input name="motivo" required></label>
+      <button>Registrar movimiento</button>
     </form>
     <h3>Cerrar turno</h3>
     <p>Cuenta el dinero que hay en la caja y escríbelo. El sistema calcula la diferencia.</p>
     <form id="form-cerrar" class="fila">
-      <input name="contado" type="number" step="0.01" min="0" placeholder="Efectivo contado $" required>
-      <input name="notas" placeholder="Notas (opcional)">
+      <label class="campo"><span>Efectivo contado ($)</span><input name="contado" type="number" inputmode="decimal" step="0.01" min="0" required></label>
+      <label class="campo"><span>Notas (opcional)</span><input name="notas"></label>
       <button class="primario">Cerrar turno</button>
     </form>
   </div>
-  <div id="msg-caja" class="msg"></div>
+  <div id="msg-caja" class="msg" role="status"></div>
   <div id="turnos-recientes" data-solo-dueno>
     <h3>Turnos recientes</h3>
-    <table id="t-turnos"><thead><tr><th>Cajero</th><th>Abrió</th><th>Cerró</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th></th></tr></thead><tbody></tbody></table>
+    <table id="t-turnos" data-vacio="Todavía no hay turnos."><thead><tr><th>Cajero</th><th>Abrió</th><th>Cerró</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th><th>Acciones</th></tr></thead><tbody></tbody></table>
   </div>
 </section>
 
@@ -152,21 +196,21 @@
   <h2>Usuarios</h2>
   <p><b>Dueño:</b> acceso total. <b>Cajero:</b> solo cobra, ve productos sin costos, maneja fiado y recibe envases.</p>
   <form id="form-usuario" class="fila">
-    <input name="nombre" placeholder="Nombre" required>
-    <input name="usuario" placeholder="Usuario" required>
-    <input name="password" type="password" placeholder="Contraseña (mín. 6)" required>
-    <select name="rol"><option value="cajero">Cajero</option><option value="dueno">Dueño</option></select>
-    <button class="primario">Agregar</button>
+    <label class="campo"><span>Nombre</span><input name="nombre" required></label>
+    <label class="campo"><span>Usuario (para entrar)</span><input name="usuario" autocomplete="off" required></label>
+    <label class="campo"><span>Contraseña (mínimo 6)</span><input name="password" type="password" autocomplete="new-password" required></label>
+    <label class="campo"><span>Rol</span><select name="rol"><option value="cajero">Cajero</option><option value="dueno">Dueño</option></select></label>
+    <button class="primario">Agregar usuario</button>
   </form>
-  <div id="msg-usr" class="msg"></div>
-  <table id="t-usuarios"><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th></th></tr></thead><tbody></tbody></table>
+  <div id="msg-usr" class="msg" role="status"></div>
+  <table id="t-usuarios" data-vacio="Sin usuarios."><thead><tr><th>Nombre</th><th>Usuario</th><th>Rol</th><th>Estado</th><th>Acciones</th></tr></thead><tbody></tbody></table>
   <h3>Acceso desde tablet o celular</h3>
   <div id="acceso-red"></div>
 </section>
 
 <section id="corte" class="tab">
   <h2>Corte de caja</h2>
-  <label>Fecha <input type="date" id="fecha-corte"></label>
+  <label class="campo fecha"><span>Fecha</span><input type="date" id="fecha-corte"></label>
   <div class="kpis">
     <div><small>Ventas</small><b id="k-n">0</b></div>
     <div><small>Total vendido</small><b id="k-total">$0.00</b></div>
@@ -178,15 +222,25 @@
     <div><small>Efectivo en caja</small><b id="k-caja">$0.00</b></div>
   </div>
   <h3>Turnos del día</h3>
-  <table id="t-turnos-corte"><thead><tr><th>Cajero</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody></tbody></table>
+  <table id="t-turnos-corte" data-vacio="No hubo turnos este día."><thead><tr><th>Cajero</th><th>Fondo</th><th>Esperado</th><th>Contado</th><th>Diferencia</th></tr></thead><tbody></tbody></table>
   <h3>Ventas por usuario</h3>
-  <table id="t-usr-corte"><thead><tr><th>Usuario</th><th>Ventas</th><th>Total</th></tr></thead><tbody></tbody></table>
+  <table id="t-usr-corte" data-vacio="No hubo ventas este día."><thead><tr><th>Usuario</th><th>Ventas</th><th>Total</th></tr></thead><tbody></tbody></table>
   <h3>Más vendidos</h3>
-  <table id="t-top"><thead><tr><th>Producto</th><th>Unidades</th><th>Importe</th></tr></thead><tbody></tbody></table>
+  <table id="t-top" data-vacio="No hubo ventas este día."><thead><tr><th>Producto</th><th>Unidades</th><th>Importe</th></tr></thead><tbody></tbody></table>
   <h3>Envases retornables</h3>
-  <table id="t-env"><thead><tr><th>Producto</th><th>Casco</th><th>Vacíos en tienda</th><th>En calle</th><th>Casco en calle</th></tr></thead><tbody></tbody></table>
-  <h3>⚠ Stock bajo</h3>
-  <table id="t-bajo"><thead><tr><th>Producto</th><th>Stock</th><th>Mínimo</th></tr></thead><tbody></tbody></table>
+  <table id="t-env" data-vacio="No hay productos retornables."><thead><tr><th>Producto</th><th>Casco</th><th>Vacíos en tienda</th><th>En calle</th><th>Casco en calle</th></tr></thead><tbody></tbody></table>
+  <h3>⚠ Existencias bajas</h3>
+  <table id="t-bajo" data-vacio="Todo tiene existencias suficientes 👍"><thead><tr><th>Producto</th><th>Existencias</th><th>Mínimo</th></tr></thead><tbody></tbody></table>
+</section>
+
+<section id="respaldos" class="tab">
+  <h2>Respaldos</h2>
+  <p>El sistema guarda copias de seguridad solo: al abrirlo, cada pocas horas, al cerrar cada turno y al cerrarlo.
+     Se conserva todo lo de las últimas 24 horas y el último respaldo de cada día del último mes.</p>
+  <p><button id="respaldar-ahora" class="primario">Respaldar ahora</button></p>
+  <div id="msg-resp" class="msg" role="status"></div>
+  <table id="t-respaldos" data-vacio="Todavía no hay respaldos."><thead><tr><th>Fecha y hora</th><th>Cuándo se hizo</th><th>Tamaño</th><th>Acciones</th></tr></thead><tbody></tbody></table>
+  <p class="nota">Para tener una copia fuera de la computadora, abre la carpeta de respaldos desde la ventanita del programa y cópiala a una USB.</p>
 </section>
 </main>
 <script src="{{ url_for('static', filename='app.js') }}"></script>

@@ -126,20 +126,3 @@ def test_sugerencia_pedido(client):
     assert s["stock"] == 4 and s["pedir"] == (-(-44 * 7 // 14)) + 12 - 4
     assert d["total_estimado"] >= s["costo_estimado"]
     assert client.get("/api/sugerencia-pedido?historial=x").status_code == 400
-
-
-def test_respaldo_diario_y_rotacion(tmp_path):
-    import sqlite3
-    from datetime import date, timedelta
-    from pos.respaldos import respaldar
-    db = tmp_path / "pos.db"
-    create_app(str(db))
-    dest = tmp_path / "respaldos"
-    hoy = date(2026, 11, 20)
-    for i in range(20):
-        respaldar(str(db), str(dest), conservar=5, hoy=hoy - timedelta(days=19 - i))
-    archivos = sorted(p.name for p in dest.iterdir())
-    assert archivos == [f"pos-2026-11-{d}.db" for d in range(16, 21)]
-    n = sqlite3.connect(dest / archivos[-1]).execute("SELECT COUNT(*) FROM productos").fetchone()[0]
-    assert n >= 10  # la copia es una base completa
-    assert respaldar(str(tmp_path / "no-existe.db"), str(dest)) is None

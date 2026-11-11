@@ -144,3 +144,43 @@ def test_programa_completo_como_proceso_aparte(tmp_path):
     finally:
         p.terminate()
         p.wait(10)
+
+
+def test_apagar_tablet_desactiva_el_acceso_y_termina_sin_abrir_nada(datos):
+    """Lo ejecuta el instalador: una instalacion nueva nunca deja el sistema visible en la red."""
+    config.guardar({"lan": True})
+    assert config.cargar()["lan"] is True
+    assert main(["--apagar-tablet"]) == 0
+    assert config.cargar()["lan"] is False
+    assert not (datos / "logs").exists()      # no arranco el programa: solo cambio la preferencia
+
+
+@pytest.mark.skipif(os.name == "nt", reason="Windows no puede mandar Ctrl+C a un proceso hijo")
+def test_respaldos_al_abrir_periodicos_y_al_cerrar(tmp_path):
+    """Antes el respaldo era solo uno al abrir; el del dia no tenia ninguna venta. Ahora: abrir + cada X horas + cerrar."""
+    import signal
+    from pos.respaldos import listar
+    puerto = puerto_cualquiera()
+    env = {**os.environ, "POS_DATA_DIR": str(tmp_path / "d"), "POS_NO_BROWSER": "1", "POS_PORT": str(puerto),
+           "POS_DB": str(tmp_path / "d" / "pos.db"), "PYTHONPATH": RAIZ, "POS_SIN_DIALOGOS": "1",
+           "POS_RESPALDO_HORAS": "0.0006"}                    # ~2 segundos, para la prueba
+    p = subprocess.Popen([sys.executable, "servidor.py", "--sin-ventana"], cwd=RAIZ, env=env,
+                         stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    carpeta = str(tmp_path / "d" / "respaldos")
+    try:
+        for _ in range(60):
+            if escucha(puerto):
+                break
+            time.sleep(0.25)
+        for _ in range(60):                                   # espera al menos un respaldo periodico
+            if any(r["motivo"] == "auto" for r in listar(carpeta)):
+                break
+            time.sleep(0.25)
+        motivos = {r["motivo"] for r in listar(carpeta)}
+        assert {"inicio", "auto"} <= motivos, motivos
+        p.send_signal(signal.SIGINT)                           # como cerrar la ventana de la consola
+        p.wait(15)
+    finally:
+        if p.poll() is None:
+            p.kill()
+    assert "al-cerrar" in {r["motivo"] for r in listar(carpeta)}

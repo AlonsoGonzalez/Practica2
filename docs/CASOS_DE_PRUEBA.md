@@ -1,9 +1,9 @@
 # Casos de prueba
 
-Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
+Generado con `python tools/casos_de_prueba.py`. **103 pruebas, 154 ejecuciones** (las parametrizadas corren varias veces). Se ejecutan con `pytest`.
 
 ## Ventas, inventario, fiado, envases y sugerencia de pedido (flujo base)
-`tests/test_pos.py` · 11 pruebas · 11 ejecuciones
+`tests/test_pos.py` · 10 pruebas · 10 ejecuciones
 
 - Catalogo semilla
 - Venta descuenta stock y calcula cambio
@@ -15,7 +15,6 @@ Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** 
 - Retornables casco
 - Envases devueltos solo en retornables
 - Sugerencia pedido
-- Respaldo diario y rotacion
 
 ## Escenarios límite: entradas raras, concurrencia, datos borrados, abusos
 `tests/test_escenarios.py` · 25 pruebas · 76 ejecuciones
@@ -99,20 +98,28 @@ Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** 
 - Si alguien regresa la fecha del sistema, la prueba no vuelve a funcionar.
 
 ## Respaldos, arranque, rutas de datos y migración de bases viejas
-`tests/test_operacion.py` · 9 pruebas · 9 ejecuciones
+`tests/test_operacion.py` · 17 pruebas · 17 ejecuciones
 
-- Respaldo es idempotente el mismo dia
+- Respaldo con nombre con hora y motivo
+- Rotacion conserva 24h completas y el ultimo de cada dia
 - Rotacion no borra archivos ajenos
+- Respaldos de versiones anteriores siguen apareciendo
 - Respaldo seguro no tumba el arranque
-- Respaldo restaurado contiene las ventas
+- El caso que fallo en la prueba real: el respaldo del dia no contenia ninguna venta.
+- Respaldar ahora y listar desde la app
+- Escenario de desastre: se hizo un respaldo, despues se registraron ventas por error o se perdio info.
+- Restaurar rechaza nombres peligrosos archivos ajenos y danados
+- Respaldos solo para el dueno
+- Un respaldo viejo (sin tablas de turnos/usuarios nuevas columnas) se actualiza al restaurarlo.
 - Puerto ocupado usa el siguiente
 - Direcciones para la tablet incluyen el nombre del equipo
 - Rutas de datos
 - Version instalada se niega a arrancar sin llave publica
 - Una tienda que ya usaba la version 1 actualiza y conserva sus productos y ventas.
+- Restaurar no borra el respaldo elegido aunque sea muy viejo
 
 ## Arranque de la app instalada: instancia única, servidor, configuración y errores
-`tests/test_arranque.py` · 8 pruebas · 8 ejecuciones
+`tests/test_arranque.py` · 10 pruebas · 10 ejecuciones
 
 - Ping es publico aun exigiendo licencia y sesion
 - Servidor arranca responde y se detiene
@@ -122,6 +129,8 @@ Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** 
 - Configuracion persistente y a prueba de archivos danados
 - Main devuelve error y deja registro si no puede arrancar
 - Lo mismo que hace el doble clic: arranca, atiende, un segundo lanzamiento no duplica y se apaga.
+- Lo ejecuta el instalador: una instalacion nueva nunca deja el sistema visible en la red.
+- Antes el respaldo era solo uno al abrir; el del dia no tenia ninguna venta. Ahora: abrir + cada X horas + cerrar.
 
 ## Recorrido completo en navegador real
 `tests/test_e2e.py` · 1 pruebas · 1 ejecuciones
@@ -131,10 +140,16 @@ Generado con `python tools/casos_de_prueba.py`. **94 pruebas, 145 ejecuciones** 
 ## Pasos del recorrido en navegador (`tests/e2e/flujo.js`)
 
 - OK 1 licencia: clave mala rechazada, clave buena activa y pasa a crear la cuenta
-- OK 2 dueño: ve las 7 pestañas, abre turno con fondo $200
+- OK 2 dueño: ve las 8 pestañas, abre turno con fondo $200
 - OK 3 XSS: el nombre con HTML se muestra como texto y no se ejecuta
 - OK 4 venta cobrada
 - OK 5 cajero: clave mala rechazada, solo ve Venta/Caja/Fiado y cae en Caja por no tener turno
-- OK 6 cajero: sin turno lo manda a Caja; cobra con turno; cierra con faltante y se lo dice
+- OK 6 cajero: sin turno ve el aviso y no puede cobrar; con turno cobra; cierra con faltante y se lo dice
 - OK 7 corte muestra el faltante de Luis; al desactivarlo su tablet vuelve al login
+- OK 8 las 8 pestañas: todos los campos tienen etiqueta visible y todos los botones miden al menos 44 px
+- OK 9 celular: sin scroll horizontal en 8 pestañas, tablas como tarjetas, barra de cobro fija y Cobrar a un toque
+- OK 10 fiado: estado vacío con mensaje, dialogo propio para abonar y abono registrado
+- OK 11 fiado sin límite permite la venta
+- OK 12 respaldos: se ven los automáticos (incluido el del cierre de turno), respaldar ahora y confirmación antes de restaurar
+- OK 13 salir: solo se ve el inicio de sesión, sin menú ni datos detrás
 - OK 8 sin errores de JavaScript en ningun navegador

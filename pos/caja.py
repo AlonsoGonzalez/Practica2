@@ -4,9 +4,10 @@ efectivo esperado = fondo + ventas en efectivo + abonos cobrados + ingresos
                     - retiros - casco reembolsado
 Las ventas a fiado no entran: ahi no se recibe dinero.
 """
-from flask import Blueprint, g, jsonify
+from flask import Blueprint, current_app, g, jsonify
 
 from .db import begin, get_db
+from .respaldos import respaldar_seguro
 from .validar import centavos, datos, texto
 
 bp = Blueprint("caja", __name__)
@@ -27,7 +28,7 @@ def requiere_turno(db):
     t = turno_abierto(db, g.usuario["id"])
     if t:
         return t, None
-    return None, err("Abre tu turno de caja antes de cobrar", 409, estado="sin_turno")
+    return None, err("Tu turno de caja está cerrado. Ábrelo en la pestaña Caja para poder cobrar.", 409, estado="sin_turno")
 
 
 def _suma(db, sql, tid):
@@ -77,13 +78,13 @@ def abrir_turno():
     try:
         fondo = centavos(d.get("fondo", 0))
     except ValueError:
-        return err("Fondo invalido")
+        return err("El fondo inicial no es válido.")
     if fondo < 0:
-        return err("El fondo no puede ser negativo")
+        return err("El fondo inicial no puede ser negativo.")
     db = get_db()
     begin()
     if turno_abierto(db, g.usuario["id"]):
-        return err("Ya tienes un turno abierto", 409)
+        return err("Ya tienes un turno abierto.", 409)
     cur = db.execute("INSERT INTO turnos (usuario_id,fondo) VALUES (?,?)", (g.usuario["id"], fondo))
     db.commit()
     return jsonify(id=cur.lastrowid), 201
@@ -96,17 +97,17 @@ def movimiento():
         monto = centavos(d.get("monto"))
         motivo = texto(d.get("motivo"), 120, True)
     except ValueError:
-        return err("Indica un monto valido y el motivo")
+        return err("Escribe un monto válido y el motivo del movimiento.")
     tipo = d.get("tipo")
     if tipo not in ("retiro", "ingreso") or monto <= 0:
-        return err("Tipo o monto invalido")
+        return err("El tipo o el monto del movimiento no son válidos.")
     db = get_db()
     begin()
     t, falla = requiere_turno(db)
     if falla:
         return falla
     if tipo == "retiro" and monto > resumen(db, t)["esperado"]:
-        return err("No hay tanto efectivo en la caja para retirar", 409)
+        return err("No hay tanto efectivo en la caja para retirar esa cantidad.", 409)
     db.execute("INSERT INTO caja_mov (turno_id,tipo,monto,motivo) VALUES (?,?,?,?)", (t["id"], tipo, monto, motivo))
     db.commit()
     return jsonify(ok=True), 201
@@ -117,9 +118,9 @@ def _cerrar(db, t, d, cerrado_por):
         contado = centavos(d.get("contado"))
         notas = texto(d.get("notas"), 300)
     except ValueError:
-        return err("Indica el efectivo contado (monto valido)")
+        return err("Escribe el efectivo que contaste (un monto válido).")
     if contado < 0:
-        return err("El efectivo contado no puede ser negativo")
+        return err("El efectivo contado no puede ser negativo.")
     esperado = resumen(db, t)["esperado"]
     db.execute(
         "UPDATE turnos SET cerrado=datetime('now','localtime'), contado=?, esperado=?, diferencia=?,"
@@ -127,6 +128,8 @@ def _cerrar(db, t, d, cerrado_por):
         (contado, esperado, contado - esperado, notas, cerrado_por, t["id"]),
     )
     db.commit()
+    # el cierre de turno es el mejor momento para respaldar: ya quedaron registradas las ventas del turno
+    respaldar_seguro(current_app.config["DATABASE"], current_app.config["RESPALDOS_DIR"], "cierre-turno")
     cerrado = db.execute("SELECT * FROM turnos WHERE id=?", (t["id"],)).fetchone()
     return jsonify(_turno_json(db, cerrado, True))
 
@@ -137,7 +140,7 @@ def cerrar_turno():
     begin()
     t = turno_abierto(db, g.usuario["id"])
     if not t:
-        return err("No tienes un turno abierto", 409, estado="sin_turno")
+        return err("No tienes un turno abierto.", 409, estado="sin_turno")
     return _cerrar(db, t, datos(), g.usuario["id"])
 
 
@@ -150,7 +153,7 @@ def listar_turnos():
     try:
         fecha = date.fromisoformat(fecha).isoformat() if fecha else None
     except ValueError:
-        return err("Fecha invalida (usa AAAA-MM-DD)")
+        return err("La fecha no es válida. Usa el formato AAAA-MM-DD.")
     db = get_db()
     sql, params = "SELECT * FROM turnos", ()
     if fecha:
@@ -164,7 +167,7 @@ def ver_turno(tid):
     db = get_db()
     t = db.execute("SELECT * FROM turnos WHERE id=?", (tid,)).fetchone()
     if not t:
-        return err("Turno no encontrado", 404)
+        return err("No se encontró ese turno.", 404)
     out = _turno_json(db, t, True)
     out["movimientos"] = [dict(m) for m in db.execute(
         "SELECT fecha,tipo,monto,motivo FROM caja_mov WHERE turno_id=? ORDER BY id", (tid,))]
@@ -178,7 +181,7 @@ def cerrar_turno_ajeno(tid):
     begin()
     t = db.execute("SELECT * FROM turnos WHERE id=?", (tid,)).fetchone()
     if not t:
-        return err("Turno no encontrado", 404)
+        return err("No se encontró ese turno.", 404)
     if t["cerrado"]:
-        return err("El turno ya esta cerrado", 409)
+        return err("Ese turno ya está cerrado.", 409)
     return _cerrar(db, t, datos(), g.usuario["id"])

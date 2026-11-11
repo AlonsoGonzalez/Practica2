@@ -39,6 +39,12 @@ Name: "{autodesktop}\Punto de Venta"; Filename: "{app}\PuntoDeVenta.exe"; Tasks:
 Name: "{userstartup}\Punto de Venta"; Filename: "{app}\PuntoDeVenta.exe"; Tasks: inicio
 
 [Run]
+; una instalacion nueva (o una reinstalacion) nunca deja el sistema visible en la red sin avisar: la tablet se vuelve a activar a proposito
+Filename: "{app}\PuntoDeVenta.exe"; Parameters: "--apagar-tablet"; Flags: runhidden
 Filename: "{app}\PuntoDeVenta.exe"; Description: "Abrir Punto de Venta"; Flags: nowait postinstall skipifsilent
+
+[UninstallRun]
+; el desinstalador debe cerrar el programa antes de borrar archivos (si no, quedan archivos y el puerto 5000 ocupados)
+Filename: "{sys}\taskkill.exe"; Parameters: "/F /IM PuntoDeVenta.exe"; Flags: runhidden; RunOnceId: "CerrarPuntoDeVenta"
 
 ; Los datos de la tienda viven en %APPDATA%\PuntoVentaAbarrotes y NO se borran al desinstalar ni al actualizar.

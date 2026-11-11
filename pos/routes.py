@@ -54,14 +54,14 @@ def crear_producto():
         retornable = 1 if d.get("retornable") else 0
         casco = pesos_a_centavos(opcional(d, "casco", 0)) if retornable else 0
     except (KeyError, ValueError, AttributeError):
-        return err("Datos de producto invalidos")
+        return err("Revisa los datos del producto: nombre, código y precio son obligatorios y los números no pueden ser negativos.")
     if precio < 0 or costo < 0 or casco < 0:
-        return err("Datos de producto invalidos")
+        return err("Revisa los datos del producto: nombre, código y precio son obligatorios y los números no pueden ser negativos.")
     db = get_db()
     begin()
     previo = db.execute("SELECT id, activo FROM productos WHERE codigo=?", (codigo,)).fetchone()
     if previo and previo["activo"]:
-        return err("Ya existe un producto con ese codigo", 409)
+        return err("Ya existe un producto con ese código.", 409)
     if previo:  # estaba borrado: se reactiva conservando su historial
         pid = previo["id"]
         db.execute(
@@ -90,7 +90,7 @@ def editar_producto(pid):
     db = get_db()
     p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
     if not p:
-        return err("Producto no encontrado", 404)
+        return err("No se encontró ese producto.", 404)
     try:
         nombre = texto(d.get("nombre", p["nombre"]), 120, True)
         categoria = texto(d.get("categoria", p["categoria"]) or "General", 60)
@@ -100,9 +100,9 @@ def editar_producto(pid):
         retornable = (1 if d["retornable"] else 0) if "retornable" in d else p["retornable"]
         casco = pesos_a_centavos(d["casco"]) if "casco" in d else p["casco"]
     except (ValueError, AttributeError):
-        return err("Datos de producto invalidos")
+        return err("Revisa los datos del producto: nombre, código y precio son obligatorios y los números no pueden ser negativos.")
     if precio < 0 or costo < 0 or casco < 0:
-        return err("Datos de producto invalidos")
+        return err("Revisa los datos del producto: nombre, código y precio son obligatorios y los números no pueden ser negativos.")
     db.execute(
         "UPDATE productos SET nombre=?,categoria=?,precio=?,costo=?,stock_minimo=?,retornable=?,casco=?"
         " WHERE id=?",
@@ -118,7 +118,7 @@ def borrar_producto(pid):
     db = get_db()
     cur = db.execute("UPDATE productos SET activo=0 WHERE id=?", (pid,))
     db.commit()
-    return (jsonify(ok=True), 200) if cur.rowcount else err("Producto no encontrado", 404)
+    return (jsonify(ok=True), 200) if cur.rowcount else err("No se encontró ese producto.", 404)
 
 
 @bp.post("/api/productos/<int:pid>/ajuste")
@@ -128,16 +128,16 @@ def ajustar_stock(pid):
     try:
         cantidad = entero(d["cantidad"], -MAX_ENTERO, MAX_ENTERO)
     except (KeyError, ValueError):
-        return err("Cantidad invalida")
+        return err("La cantidad no es válida. Escribe un número entero mayor que cero.")
     if cantidad == 0:
-        return err("Cantidad invalida")
+        return err("La cantidad no es válida. Escribe un número entero mayor que cero.")
     db = get_db()
     begin()
     p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
     if not p:
-        return err("Producto no encontrado", 404)
+        return err("No se encontró ese producto.", 404)
     if p["stock"] + cantidad < 0 or p["stock"] + cantidad > MAX_ENTERO:
-        return err("El ajuste deja el stock fuera de rango")
+        return err("Ese ajuste dejaría el inventario en un número imposible (menor que cero o demasiado grande).")
     db.execute("UPDATE productos SET stock=stock+? WHERE id=?", (cantidad, pid))
     db.execute(
         "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
@@ -153,12 +153,12 @@ def crear_venta():
     d = datos()
     items = d.get("items")
     if not isinstance(items, list) or not items:
-        return err("El carrito esta vacio")
+        return err("El ticket está vacío. Agrega al menos un producto.")
     if len(items) > MAX_LINEAS:
-        return err("El carrito tiene demasiadas lineas")
+        return err("El ticket tiene demasiadas líneas. Cóbralo en dos partes.")
     metodo = d.get("metodo", "efectivo")
     if metodo not in ("efectivo", "fiado"):
-        return err("Metodo de pago invalido")
+        return err("El método de pago no es válido.")
     db = get_db()
     begin()  # bloquea escrituras de otros cajeros hasta terminar: nadie vende la misma ultima pieza
     turno, falla = requiere_turno(db)
@@ -173,16 +173,16 @@ def crear_venta():
             acc[0] += cant
             acc[1] += dev
     except (KeyError, ValueError, TypeError, AttributeError):
-        return err("Items invalidos")
+        return err("Hay un producto del ticket con datos no válidos.")
     lineas, subtotal, casco_total = [], 0, 0
     for pid, (cant, dev) in pedidos.items():
         p = db.execute("SELECT * FROM productos WHERE id=? AND activo=1", (pid,)).fetchone()
         if not p:
-            return err(f"Producto {pid} no encontrado", 404)
+            return err("Uno de los productos del ticket ya no existe. Quítalo del ticket.", 404)
         if p["stock"] < cant:
-            return err(f"Stock insuficiente de {p['nombre']} (hay {p['stock']})", 409)
+            return err(f"No alcanza el inventario de {p['nombre']}: quedan {p['stock']} y quieres vender {cant}.", 409)
         if dev and not p["retornable"]:
-            return err(f"{p['nombre']} no es retornable")
+            return err(f"{p['nombre']} no es un producto retornable.")
         casco = (cant - dev) * p["casco"] if p["retornable"] else 0
         lineas.append((p, cant, dev, casco))
         subtotal += p["precio"] * cant
@@ -195,17 +195,19 @@ def crear_venta():
             "SELECT * FROM clientes WHERE id=? AND activo=1", (d.get("cliente_id"),)
         ).fetchone() if isinstance(d.get("cliente_id"), (int, str)) and not isinstance(d.get("cliente_id"), bool) else None
         if not cliente:
-            return err("Selecciona un cliente para vender a fiado", 400)
+            return err("Para vender a fiado elige primero un cliente.", 400)
         if cliente["limite"] and cliente["saldo"] + total > cliente["limite"]:
-            return err("La venta excede el limite de credito del cliente", 409)
+            def m(c): return "$%.2f" % (c / 100)
+            return err(f"No se puede fiar: {cliente['nombre']} ya debe {m(cliente['saldo'])}, esta venta es de {m(total)} "
+                       f"y su límite de crédito es {m(cliente['limite'])}. Le quedan {m(max(0, cliente['limite'] - cliente['saldo']))} disponibles.", 409)
         recibido = 0
     else:
         try:
             recibido = pesos_a_centavos(d["recibido"]) if "recibido" in d else total
         except ValueError:
-            return err("Monto recibido invalido")
+            return err("El monto recibido no es válido.")
         if recibido < total:
-            return err("El monto recibido es menor al total")
+            return err("El dinero recibido no alcanza para pagar el total.")
     cambio = recibido - total if metodo == "efectivo" else 0
     cur = db.execute(
         "INSERT INTO ventas (total,recibido,cambio,metodo,cliente_id,casco,usuario_id,turno_id)"
@@ -245,7 +247,7 @@ def ver_venta(vid):
     db = get_db()
     v = db.execute("SELECT * FROM ventas WHERE id=?", (vid,)).fetchone()
     if not v:
-        return err("Venta no encontrada", 404)
+        return err("No se encontró esa venta.", 404)
     items = db.execute(
         "SELECT i.cantidad,i.precio,p.nombre FROM venta_items i"
         " JOIN productos p ON p.id=i.producto_id WHERE i.venta_id=?",
@@ -261,7 +263,7 @@ def corte():
     try:
         fecha = date.fromisoformat(fecha).isoformat()
     except ValueError:
-        return err("Fecha invalida (usa AAAA-MM-DD)")
+        return err("La fecha no es válida. Usa el formato AAAA-MM-DD.")
     db = get_db()
     r = db.execute(
         "SELECT COUNT(*) n, COALESCE(SUM(total),0) total FROM ventas WHERE date(fecha)=?",
@@ -350,14 +352,14 @@ def devolucion_envases(pid):
     begin()
     p = _retornable(db, pid)
     if not p:
-        return err("Producto retornable no encontrado", 404)
+        return err("No se encontró ese producto retornable.", 404)
     if n is None:
-        return err("Cantidad invalida")
+        return err("La cantidad no es válida. Escribe un número entero mayor que cero.")
     turno, falla = requiere_turno(db)
     if falla:
         return falla
     if n > p["en_calle"]:
-        return err(f"Solo hay {p['en_calle']} envases con casco fuera de la tienda", 409)
+        return err(f"Solo hay {p['en_calle']} envases de este producto fuera de la tienda con casco pagado.", 409)
     reembolso = n * p["casco"]
     db.execute("UPDATE productos SET en_calle=en_calle-?, vacios=vacios+? WHERE id=?", (n, n, pid))
     db.execute(
@@ -376,11 +378,11 @@ def canje_proveedor(pid):
     begin()
     p = _retornable(db, pid)
     if not p:
-        return err("Producto retornable no encontrado", 404)
+        return err("No se encontró ese producto retornable.", 404)
     if n is None:
-        return err("Cantidad invalida")
+        return err("La cantidad no es válida. Escribe un número entero mayor que cero.")
     if n > p["vacios"]:
-        return err(f"Solo hay {p['vacios']} envases vacios en la tienda", 409)
+        return err(f"Solo hay {p['vacios']} envases vacíos en la tienda para entregar.", 409)
     db.execute("UPDATE productos SET vacios=vacios-?, stock=stock+? WHERE id=?", (n, n, pid))
     db.execute(
         "INSERT INTO movimientos (producto_id,cantidad,motivo) VALUES (?,?,?)",
@@ -416,9 +418,9 @@ def crear_cliente():
         telefono = texto(d.get("telefono"), 30)
         limite = pesos_a_centavos(opcional(d, "limite", 0))
     except ValueError:
-        return err("Datos de cliente invalidos")
+        return err("Revisa los datos del cliente: el nombre es obligatorio y el límite no puede ser negativo.")
     if not nombre or limite < 0:
-        return err("Datos de cliente invalidos")
+        return err("Revisa los datos del cliente: el nombre es obligatorio y el límite no puede ser negativo.")
     db = get_db()
     cur = db.execute(
         "INSERT INTO clientes (nombre,telefono,limite) VALUES (?,?,?)",
@@ -433,7 +435,7 @@ def ver_cliente(cid):
     db = get_db()
     c = db.execute("SELECT * FROM clientes WHERE id=? AND activo=1", (cid,)).fetchone()
     if not c:
-        return err("Cliente no encontrado", 404)
+        return err("No se encontró ese cliente.", 404)
     ventas = db.execute(
         "SELECT id,fecha,total FROM ventas WHERE cliente_id=? ORDER BY id DESC", (cid,)
     ).fetchall()
@@ -449,16 +451,16 @@ def abonar(cid):
     try:
         monto = pesos_a_centavos(d["monto"])
     except (KeyError, ValueError):
-        return err("Monto invalido")
+        return err("El monto no es válido.")
     db = get_db()
     begin()
     c = db.execute("SELECT * FROM clientes WHERE id=? AND activo=1", (cid,)).fetchone()
     if not c:
-        return err("Cliente no encontrado", 404)
+        return err("No se encontró ese cliente.", 404)
     if monto <= 0:
-        return err("Monto invalido")
+        return err("El monto no es válido.")
     if monto > c["saldo"]:
-        return err("El abono es mayor al saldo del cliente", 409)
+        return err("El abono es mayor a lo que el cliente debe.", 409)
     turno, falla = requiere_turno(db)
     if falla:
         return falla
@@ -476,7 +478,7 @@ def sugerencia_pedido():
         historial = min(3650, max(1, entero(request.args.get("historial", 14))))
         cobertura = min(365, max(1, entero(request.args.get("cobertura", 7))))
     except ValueError:
-        return err("Parametros invalidos")
+        return err("Los parámetros no son válidos.")
     desde = (date.today() - timedelta(days=historial - 1)).isoformat()
     rows = get_db().execute(
         "SELECT p.*, COALESCE(SUM(i.cantidad),0) vendido FROM productos p"
