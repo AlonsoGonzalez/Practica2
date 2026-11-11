@@ -6,6 +6,7 @@ const api = async (url, opts = {}) => {
     ? {method: opts.method || "POST", headers: {"Content-Type": "application/json"}, body: JSON.stringify(opts.body)}
     : opts);
   const data = await r.json();
+  if (r.status === 402) mostrarLicencia(data);
   if (!r.ok) throw new Error(data.error || "Error");
   return data;
 };
@@ -86,40 +87,7 @@ $("#cobrar").onclick = async () => {
   try {
     const v = await api("/api/ventas", {body});
     say($("#msg-venta"), `Venta #${v.id} registrada. ` + (body.metodo === "fiado" ? "Cargada a fiado." : `Cambio: ${money(v.cambio)}`), true);
-    carrito = {}; $("#recibido").value = ""; pintarCarrito(); // ---- Fiado ----
-async function cargarClientes() {
-  const cs = await api("/api/clientes");
-  $("#t-clientes tbody").innerHTML = cs.map(c =>
-    `<tr><td>${esc(c.nombre)}</td><td>${esc(c.telefono)}</td><td>${c.limite ? money(c.limite) : "—"}</td>
-     <td class="${c.saldo ? "bajo" : ""}">${money(c.saldo)}</td>
-     <td>${c.saldo ? `<button data-abono="${c.id}">Abonar</button>` : ""}</td></tr>`).join("");
-  $("#por-cobrar").textContent = money(cs.reduce((s, c) => s + c.saldo, 0));
-  document.querySelectorAll("[data-abono]").forEach(b => b.onclick = async () => {
-    const m = prompt("Monto del abono ($)"); if (!m) return;
-    try { await api(`/api/clientes/${b.dataset.abono}/abono`, {body: {monto: m}}); cargarClientes(); }
-    catch (e) { say($("#msg-cli"), e.message, false); }
-  });
-}
-$("#form-cliente").onsubmit = async e => {
-  e.preventDefault();
-  try {
-    await api("/api/clientes", {body: Object.fromEntries(new FormData(e.target))});
-    e.target.reset(); say($("#msg-cli"), "Cliente agregado", true); cargarClientes();
-  } catch (err) { say($("#msg-cli"), err.message, false); }
-};
-
-// ---- Sugerencia de pedido ----
-async function cargarPedido() {
-  const d = await api(`/api/sugerencia-pedido?historial=${$("#p-hist").value}&cobertura=${$("#p-cob").value}`);
-  $("#t-pedido tbody").innerHTML = d.items.map(i =>
-    `<tr><td>${esc(i.nombre)}</td><td class="${i.dias_de_stock !== null && i.dias_de_stock < 2 ? "bajo" : ""}">${i.stock}</td>
-     <td>${i.promedio_diario}</td><td>${i.dias_de_stock ?? "—"}</td><td><b>${i.pedir}</b></td><td>${money(i.costo_estimado)}</td></tr>`).join("")
-    || `<tr><td colspan="6">No hace falta pedir nada 🎉</td></tr>`;
-  $("#p-total").textContent = money(d.total_estimado);
-}
-$("#p-calc").onclick = cargarPedido;
-
-cargarCatalogo();
+    carrito = {}; $("#recibido").value = ""; pintarCarrito(); cargarCatalogo();
   } catch (e) { say($("#msg-venta"), e.message, false); }
 };
 
@@ -218,4 +186,28 @@ async function cargarPedido() {
 }
 $("#p-calc").onclick = cargarPedido;
 
-cargarCatalogo();
+// ---- Licencia ----
+async function mostrarLicencia(info) {
+  info = info.instalacion ? info : await fetch("/api/licencia").then(r => r.json());
+  $("#lic-mensaje").textContent = info.mensaje || info.error || "";
+  $("#lic-instalacion").textContent = info.instalacion;
+  $("#licencia-overlay").hidden = false;
+}
+async function revisarLicencia() {
+  const info = await fetch("/api/licencia").then(r => r.json());
+  if (!info.activa) return mostrarLicencia(info);
+  $("#lic-badge").textContent = info.estado === "desarrollo" ? "Modo desarrollo (sin licencia)"
+    : `Licencia ${info.tipo} · ${info.tienda}`;
+  cargarCatalogo();
+}
+$("#form-licencia").onsubmit = async e => {
+  e.preventDefault();
+  const r = await fetch("/api/licencia", {method: "POST", headers: {"Content-Type": "application/json"},
+    body: JSON.stringify({clave: e.target.clave.value})});
+  const d = await r.json();
+  if (!r.ok) return say($("#msg-lic"), d.error, false);
+  $("#licencia-overlay").hidden = true; e.target.reset(); say($("#msg-lic"), "", true);
+  revisarLicencia();
+};
+
+revisarLicencia();

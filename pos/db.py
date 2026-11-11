@@ -17,6 +17,15 @@ CREATE TABLE IF NOT EXISTS productos (
     vacios INTEGER NOT NULL DEFAULT 0,      -- envases vacios en tienda
     en_calle INTEGER NOT NULL DEFAULT 0     -- envases con casco pagado fuera de la tienda
 );
+CREATE TABLE IF NOT EXISTS ajustes (
+    clave TEXT PRIMARY KEY,
+    valor TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS licencia (
+    id INTEGER PRIMARY KEY CHECK (id = 1),
+    clave TEXT NOT NULL,
+    activada TEXT NOT NULL DEFAULT (datetime('now','localtime'))
+);
 CREATE TABLE IF NOT EXISTS clientes (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     nombre TEXT NOT NULL,

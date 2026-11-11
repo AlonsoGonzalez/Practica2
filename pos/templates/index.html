@@ -7,6 +7,17 @@
 <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
 </head>
 <body>
+<div id="licencia-overlay" hidden>
+  <form id="form-licencia">
+    <h2>Activar licencia</h2>
+    <p id="lic-mensaje"></p>
+    <p>ID de esta instalación (envíalo al proveedor para recibir tu clave):</p>
+    <code id="lic-instalacion"></code>
+    <textarea name="clave" rows="4" placeholder="Pega aquí tu clave POS1.…" required></textarea>
+    <button class="primario">Activar</button>
+    <div id="msg-lic" class="msg"></div>
+  </form>
+</div>
 <header>
   <h1>🛒 Abarrotes · Punto de Venta</h1>
   <nav>
@@ -16,6 +27,7 @@
     <button data-tab="pedido">Pedido</button>
     <button data-tab="corte">Corte de caja</button>
   </nav>
+  <small id="lic-badge"></small>
 </header>
 
 <main>
