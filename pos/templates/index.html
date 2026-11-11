@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Punto de Venta - Abarrotes</title>
+<link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+<header>
+  <h1>🛒 Abarrotes · Punto de Venta</h1>
+  <nav>
+    <button data-tab="venta" class="active">Venta</button>
+    <button data-tab="inventario">Inventario</button>
+    <button data-tab="corte">Corte de caja</button>
+  </nav>
+</header>
+
+<main>
+<section id="venta" class="tab active">
+  <div class="col">
+    <input id="buscar" placeholder="Buscar o escanear código de barras…" autofocus>
+    <div id="catalogo" class="grid"></div>
+  </div>
+  <aside class="col carrito">
+    <h2>Ticket</h2>
+    <table id="carrito"><tbody></tbody></table>
+    <div class="total">Total: <span id="total">$0.00</span></div>
+    <label>Recibido <input id="recibido" type="number" step="0.5" min="0"></label>
+    <div class="cambio">Cambio: <span id="cambio">$0.00</span></div>
+    <button id="cobrar" class="primario">Cobrar</button>
+    <button id="vaciar">Vaciar</button>
+    <div id="msg-venta" class="msg"></div>
+  </aside>
+</section>
+
+<section id="inventario" class="tab">
+  <h2>Inventario</h2>
+  <form id="form-producto" class="fila">
+    <input name="codigo" placeholder="Código" required>
+    <input name="nombre" placeholder="Nombre" required>
+    <input name="categoria" placeholder="Categoría">
+    <input name="precio" type="number" step="0.01" min="0" placeholder="Precio" required>
+    <input name="costo" type="number" step="0.01" min="0" placeholder="Costo">
+    <input name="stock" type="number" min="0" placeholder="Stock">
+    <button class="primario">Agregar</button>
+  </form>
+  <div id="msg-inv" class="msg"></div>
+  <table id="tabla-inv">
+    <thead><tr><th>Código</th><th>Producto</th><th>Categoría</th><th>Precio</th><th>Costo</th><th>Stock</th><th>Ajustar</th><th></th></tr></thead>
+    <tbody></tbody>
+  </table>
+</section>
+
+<section id="corte" class="tab">
+  <h2>Corte de caja</h2>
+  <label>Fecha <input type="date" id="fecha-corte"></label>
+  <div class="kpis">
+    <div><small>Ventas</small><b id="k-n">0</b></div>
+    <div><small>Total vendido</small><b id="k-total">$0.00</b></div>
+    <div><small>Utilidad</small><b id="k-util">$0.00</b></div>
+    <div><small>Ticket promedio</small><b id="k-prom">$0.00</b></div>
+  </div>
+  <h3>Más vendidos</h3>
+  <table id="t-top"><thead><tr><th>Producto</th><th>Unidades</th><th>Importe</th></tr></thead><tbody></tbody></table>
+  <h3>⚠ Stock bajo</h3>
+  <table id="t-bajo"><thead><tr><th>Producto</th><th>Stock</th><th>Mínimo</th></tr></thead><tbody></tbody></table>
+</section>
+</main>
+<script src="{{ url_for('static', filename='app.js') }}"></script>
+</body>
+</html>
